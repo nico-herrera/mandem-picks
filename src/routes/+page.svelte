@@ -177,7 +177,7 @@
 				// Check if the username exists
 				const { data: userByUsername, error: userError } = await supabase
 					.from('users')
-					.select('password')
+					.select('*')
 					.eq('username', username)
 					.single();
 
@@ -200,6 +200,7 @@
 
 				// If both username and password match
 				user = userByUsername;
+
 				localStorage.setItem('user', JSON.stringify({ username, password, id: user.id }));
 				showAuthForm = false;
 				await loadMatchups();
