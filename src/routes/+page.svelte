@@ -176,24 +176,35 @@
 				throw new Error(`HTTP error! status: ${response.status}`);
 			}
 			const data = await response.json();
+
+			// Get the commence_time of the first matchup
+			const firstMatchupTime = new Date(data[0].commence_time);
+
+			// Calculate the cutoff time (1 week after the first matchup)
+			const cutoffTime = new Date(firstMatchupTime.getTime() + 5 * 24 * 60 * 60 * 1000);
+
 			matchups = await Promise.all(
-				data.map(async (matchup) => {
-					const votes = await getVotesForMatchup(matchup.id);
-					return {
-						...matchup,
-						home_votes: votes.filter((v) => v.vote === 'home').length,
-						away_votes: votes.filter((v) => v.vote === 'away').length,
-						odds: matchup.bookmakers
-							.filter((bookmaker) => ['DraftKings', 'FanDuel', 'BetMGM'].includes(bookmaker.title))
-							.map((bookmaker) => ({
-								name: bookmaker.title,
-								odds: bookmaker.markets.reduce((acc, market) => {
-									acc[market.key] = market.outcomes;
-									return acc;
-								}, {})
-							}))
-					};
-				})
+				data
+					.filter((matchup) => new Date(matchup.commence_time) <= cutoffTime)
+					.map(async (matchup) => {
+						const votes = await getVotesForMatchup(matchup.id);
+						return {
+							...matchup,
+							home_votes: votes.filter((v) => v.vote === 'home').length,
+							away_votes: votes.filter((v) => v.vote === 'away').length,
+							odds: matchup.bookmakers
+								.filter((bookmaker) =>
+									['DraftKings', 'FanDuel', 'BetMGM'].includes(bookmaker.title)
+								)
+								.map((bookmaker) => ({
+									name: bookmaker.title,
+									odds: bookmaker.markets.reduce((acc, market) => {
+										acc[market.key] = market.outcomes;
+										return acc;
+									}, {})
+								}))
+						};
+					})
 			);
 		} catch (error) {
 			showModalMessage('Error loading matchups: ' + error.message);
@@ -401,14 +412,14 @@
 									class="w-full sm:w-auto bg-blue-600 text-white rounded-md px-4 py-2 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors"
 									disabled={isLoading}
 								>
-									Vote {matchup.home_team}
+									Home {matchup.home_team}
 								</button>
 								<button
 									on:click={() => submitVote(matchup.id, 'away')}
 									class="w-full sm:w-auto bg-green-600 text-white rounded-md px-4 py-2 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 transition-colors"
 									disabled={isLoading}
 								>
-									Vote {matchup.away_team}
+									Away {matchup.away_team}
 								</button>
 							</div>
 							<div class="text-center sm:text-right">
