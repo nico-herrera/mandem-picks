@@ -37,8 +37,6 @@
 	});
 
 	onMount(async () => {
-		// ... (keep existing onMount logic for user authentication)
-
 		if (user) {
 			await loadMatchups();
 			subscribeToVotes();
