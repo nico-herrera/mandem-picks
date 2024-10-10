@@ -143,6 +143,25 @@
 
 		try {
 			if (isSignUp) {
+				// Check if the user already exists
+				const { data: existingUser, error: existingError } = await supabase
+					.from('users')
+					.select()
+					.eq('username', username)
+					.single();
+
+				if (existingError && existingError.code !== 'PGRST116') {
+					// PGRST116 is the code for "No rows found"
+					throw existingError;
+				}
+
+				if (existingUser) {
+					showModalMessage('User already exists.');
+					isLoading = false;
+					return;
+				}
+
+				// Proceed with sign up if user does not exist
 				const { data, error } = await supabase
 					.from('users')
 					.insert({ username, password })
@@ -155,23 +174,35 @@
 				localStorage.setItem('user', JSON.stringify({ username, password, id: data.id }));
 				showModalMessage('Sign up successful!');
 			} else {
-				const { data, error } = await supabase
+				// Check if the username exists
+				const { data: userByUsername, error: userError } = await supabase
 					.from('users')
-					.select()
+					.select('password')
 					.eq('username', username)
-					.eq('password', password)
 					.single();
 
-				if (error) throw error;
-
-				if (data) {
-					user = data;
-					localStorage.setItem('user', JSON.stringify({ username, password, id: data.id }));
-					showAuthForm = false;
-					await loadMatchups();
-				} else {
-					showModalMessage('Invalid username or password.');
+				if (userError) {
+					throw userError;
 				}
+
+				if (!userByUsername) {
+					showModalMessage('Invalid username.');
+					isLoading = false;
+					return;
+				}
+
+				// Check if the password matches
+				if (userByUsername.password !== password) {
+					showModalMessage('Invalid password.');
+					isLoading = false;
+					return;
+				}
+
+				// If both username and password match
+				user = userByUsername;
+				localStorage.setItem('user', JSON.stringify({ username, password, id: user.id }));
+				showAuthForm = false;
+				await loadMatchups();
 			}
 		} catch (error) {
 			console.error('Auth Error:', error);
