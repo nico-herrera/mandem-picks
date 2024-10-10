@@ -26,6 +26,23 @@
 		'Jacob'
 	];
 	let realtimeSubscription: any;
+	let userVotes: { [key: string]: string } = {};
+	async function loadUserVotes() {
+		if (!user) return;
+		const { data, error } = await supabase
+			.from('votes')
+			.select('matchup_id, vote')
+			.eq('user_id', user.id);
+
+		if (error) {
+			console.error('Error loading user votes:', error);
+			return;
+		}
+		userVotes = data.reduce((acc, vote) => {
+			acc[vote.matchup_id] = vote.vote;
+			return acc;
+		}, {});
+	}
 
 	onMount(async () => {
 		const storedUser = localStorage.getItem('user');
@@ -33,12 +50,14 @@
 			user = JSON.parse(storedUser);
 			showAuthForm = false;
 			await loadMatchups();
+			await loadUserVotes();
 		}
 	});
 
 	onMount(async () => {
 		if (user) {
 			await loadMatchups();
+			await loadUserVotes();
 			subscribeToVotes();
 		}
 	});
@@ -275,6 +294,10 @@
 				matchups[matchupIndex][vote === 'home' ? 'home_votes' : 'away_votes'] += 1;
 				matchups = [...matchups]; // Trigger reactivity
 			}
+
+			// Update userVotes
+			userVotes[matchupId] = vote;
+			userVotes = { ...userVotes };
 		} catch (error) {
 			console.error('Error submitting vote:', error);
 			showModalMessage('Error submitting vote: ' + error.message);
@@ -409,14 +432,26 @@
 							>
 								<button
 									on:click={() => submitVote(matchup.id, 'away')}
-									class="w-full sm:w-auto bg-green-600 text-white rounded-md px-4 py-2 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 transition-colors"
+									class="w-full sm:w-auto text-white rounded-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-colors"
+									class:bg-gray-500={userVotes[matchup.id] !== 'away'}
+									class:hover:bg-gray-600={userVotes[matchup.id] !== 'away'}
+									class:focus:ring-gray-400={userVotes[matchup.id] !== 'away'}
+									class:bg-green-600={userVotes[matchup.id] === 'away'}
+									class:hover:bg-green-700={userVotes[matchup.id] === 'away'}
+									class:focus:ring-green-500={userVotes[matchup.id] === 'away'}
 									disabled={isLoading}
 								>
 									Away {matchup.away_team}
 								</button>
 								<button
 									on:click={() => submitVote(matchup.id, 'home')}
-									class="w-full sm:w-auto bg-blue-600 text-white rounded-md px-4 py-2 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors"
+									class="w-full sm:w-auto text-white rounded-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-colors"
+									class:bg-gray-500={userVotes[matchup.id] !== 'home'}
+									class:hover:bg-gray-600={userVotes[matchup.id] !== 'home'}
+									class:focus:ring-gray-400={userVotes[matchup.id] !== 'home'}
+									class:bg-green-600={userVotes[matchup.id] === 'home'}
+									class:hover:bg-green-700={userVotes[matchup.id] === 'home'}
+									class:focus:ring-green-500={userVotes[matchup.id] === 'home'}
 									disabled={isLoading}
 								>
 									Home {matchup.home_team}
