@@ -408,18 +408,18 @@
 								class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 mb-4 sm:mb-0"
 							>
 								<button
-									on:click={() => submitVote(matchup.id, 'home')}
-									class="w-full sm:w-auto bg-blue-600 text-white rounded-md px-4 py-2 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors"
-									disabled={isLoading}
-								>
-									Home {matchup.home_team}
-								</button>
-								<button
 									on:click={() => submitVote(matchup.id, 'away')}
 									class="w-full sm:w-auto bg-green-600 text-white rounded-md px-4 py-2 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 transition-colors"
 									disabled={isLoading}
 								>
 									Away {matchup.away_team}
+								</button>
+								<button
+									on:click={() => submitVote(matchup.id, 'home')}
+									class="w-full sm:w-auto bg-blue-600 text-white rounded-md px-4 py-2 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors"
+									disabled={isLoading}
+								>
+									Home {matchup.home_team}
 								</button>
 							</div>
 							<div class="text-center sm:text-right">
