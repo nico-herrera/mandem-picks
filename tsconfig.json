@@ -11,11 +11,8 @@
 		"strict": true,
 		"moduleResolution": "bundler"
 	},
-	"include": ["src/**/*.ts", "src/**/*.js"],
-	"exclude": [
-		"node_modules",
-		"src/lib/supabaseClient.js" // Exclude the missing file
-	]
+	"include": ["src/**/*.ts", "src/**/*.js"]
+
 	// Path aliases are handled by https://kit.svelte.dev/docs/configuration#alias
 	// except $lib which is handled by https://kit.svelte.dev/docs/configuration#files
 	//
