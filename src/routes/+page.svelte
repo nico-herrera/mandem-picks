@@ -117,7 +117,7 @@
 		if (!username || !password) {
 			if (!validateInputs()) return;
 			username = name.replace(/\s+/g, '').toLowerCase();
-			password = `${favoriteColor}${favoriteAnimal}`;
+			password = `${favoriteColor}${favoriteAnimal}`.toLowerCase();
 		}
 
 		isLoading = true;
