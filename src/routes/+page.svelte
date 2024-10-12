@@ -204,6 +204,7 @@
 				localStorage.setItem('user', JSON.stringify({ username, password, id: user.id }));
 				showAuthForm = false;
 				await loadMatchups();
+				await loadUserVotes();
 			}
 		} catch (error) {
 			console.error('Auth Error:', error);
@@ -293,7 +294,7 @@
 
 			if (existingVote) {
 				if (existingVote.vote === vote) {
-					showModalMessage('You have already voted for this team.');
+					showModalMessage('You have already voted for this option.');
 					return;
 				} else {
 					// Update the existing vote
@@ -320,10 +321,22 @@
 			if (matchupIndex !== -1) {
 				if (existingVote) {
 					// Decrease the count for the old vote
-					matchups[matchupIndex][existingVote.vote === 'home' ? 'home_votes' : 'away_votes'] -= 1;
+					if (existingVote.vote === 'home') {
+						matchups[matchupIndex].home_votes -= 1;
+					} else if (existingVote.vote === 'away') {
+						matchups[matchupIndex].away_votes -= 1;
+					} else if (existingVote.vote === 'skip') {
+						matchups[matchupIndex].skip_votes -= 1;
+					}
 				}
 				// Increase the count for the new vote
-				matchups[matchupIndex][vote === 'home' ? 'home_votes' : 'away_votes'] += 1;
+				if (vote === 'home') {
+					matchups[matchupIndex].home_votes += 1;
+				} else if (vote === 'away') {
+					matchups[matchupIndex].away_votes += 1;
+				} else if (vote === 'skip') {
+					matchups[matchupIndex].skip_votes += 1;
+				}
 				matchups = [...matchups]; // Trigger reactivity
 			}
 
@@ -355,7 +368,8 @@
 		matchups[matchupIndex] = {
 			...matchups[matchupIndex],
 			home_votes: votes.filter((v) => v.vote === 'home').length,
-			away_votes: votes.filter((v) => v.vote === 'away').length
+			away_votes: votes.filter((v) => v.vote === 'away').length,
+			skip_votes: votes.filter((v) => v.vote === 'skip').length
 		};
 		matchups = [...matchups]; // Trigger reactivity
 	}
@@ -488,6 +502,19 @@
 								>
 									Home {matchup.home_team}
 								</button>
+								<button
+									on:click={() => submitVote(matchup.id, 'skip')}
+									class="w-full sm:w-auto text-white rounded-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-colors"
+									class:bg-gray-500={userVotes[matchup.id] !== 'skip'}
+									class:hover:bg-gray-600={userVotes[matchup.id] !== 'skip'}
+									class:focus:ring-gray-400={userVotes[matchup.id] !== 'skip'}
+									class:bg-yellow-600={userVotes[matchup.id] === 'skip'}
+									class:hover:bg-yellow-700={userVotes[matchup.id] === 'skip'}
+									class:focus:ring-yellow-500={userVotes[matchup.id] === 'skip'}
+									disabled={isLoading}
+								>
+									Skip
+								</button>
 							</div>
 							<div class="text-center sm:text-right">
 								<p class="text-sm font-semibold">
@@ -495,6 +522,9 @@
 								</p>
 								<p class="text-sm font-semibold">
 									{matchup.away_team}: {matchup.away_votes}
+								</p>
+								<p class="text-sm font-semibold">
+									Skipped: {matchup.skip_votes || 0}
 								</p>
 							</div>
 						</div>
