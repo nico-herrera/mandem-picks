@@ -661,7 +661,7 @@
 						{#each matchups as matchup (matchup.id)}
 							{@const mostVoted = getMostVotedOption(matchup)}
 							<div
-								class="bg-gray-700 flex flex-col items-center justify-center rounded-lg p-2 gap-1 text-md"
+								class="bg-gray-700 flex flex-col items-center justify-center rounded-lg p-2 gap-1 text-sm"
 							>
 								<h3 class="font-semibold mb-1 text-center">
 									{matchup.home_team.split(' ').slice(-1)[0]} vs {matchup.away_team
@@ -684,7 +684,7 @@
 				<div class="p-2 border-t border-gray-700">
 					<button
 						on:click={closeShareModal}
-						class="w-full bg-blue-600 text-white rounded-md px-4 py-2 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors text-md"
+						class="w-full bg-blue-600 text-white rounded-md px-4 py-2 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors text-sm"
 					>
 						Close
 					</button>
