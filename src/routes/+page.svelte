@@ -223,6 +223,29 @@
 		localStorage.removeItem('user');
 	}
 
+	async function processMatchups(matchupsToProcess) {
+		return Promise.all(
+			matchupsToProcess.map(async (matchup) => {
+				const votes = await getVotesForMatchup(matchup.id);
+				return {
+					...matchup,
+					home_votes: votes.filter((v) => v.vote === 'home').length,
+					away_votes: votes.filter((v) => v.vote === 'away').length,
+					skip_votes: votes.filter((v) => v.vote === 'skip').length,
+					odds: matchup.bookmakers
+						.filter((bookmaker) => ['DraftKings', 'FanDuel', 'BetMGM'].includes(bookmaker.title))
+						.map((bookmaker) => ({
+							name: bookmaker.title,
+							odds: bookmaker.markets.reduce((acc, market) => {
+								acc[market.key] = market.outcomes;
+								return acc;
+							}, {})
+						}))
+				};
+			})
+		);
+	}
+
 	async function loadMatchups() {
 		try {
 			const response = await fetch('/api/nfl-matchups');
@@ -231,40 +254,82 @@
 			}
 			const data = await response.json();
 
-			// Get the commence_time of the first matchup
-			const firstMatchupTime = new Date(data[0].commence_time);
-
-			// Calculate the cutoff time (1 week after the first matchup)
-			const cutoffTime = new Date(firstMatchupTime.getTime() + 5 * 24 * 60 * 60 * 1000);
-
-			matchups = await Promise.all(
-				data
-					.filter((matchup) => new Date(matchup.commence_time) <= cutoffTime)
-					.map(async (matchup) => {
-						const votes = await getVotesForMatchup(matchup.id);
-						return {
-							...matchup,
-							home_votes: votes.filter((v) => v.vote === 'home').length,
-							away_votes: votes.filter((v) => v.vote === 'away').length,
-							skip_votes: votes.filter((v) => v.vote === 'skip').length,
-							odds: matchup.bookmakers
-								.filter((bookmaker) =>
-									['DraftKings', 'FanDuel', 'BetMGM'].includes(bookmaker.title)
-								)
-								.map((bookmaker) => ({
-									name: bookmaker.title,
-									odds: bookmaker.markets.reduce((acc, market) => {
-										acc[market.key] = market.outcomes;
-										return acc;
-									}, {})
-								}))
-						};
-					})
+			// Sort matchups by commence_time
+			const sortedMatchups = data.sort(
+				(a, b) => new Date(a.commence_time) - new Date(b.commence_time)
 			);
+
+			// Group matchups into NFL weeks
+			const weeks = groupIntoNFLWeeks(sortedMatchups);
+
+			// Find the current NFL week
+			const currentWeek = findCurrentNFLWeek(weeks);
+
+			if (currentWeek) {
+				matchups = await processMatchups(currentWeek);
+			} else {
+				// If no current week found, show the next upcoming week
+				matchups = await processMatchups(weeks[0] || []);
+			}
+
 			console.log(matchups);
 		} catch (error) {
 			showModalMessage('Error loading matchups: ' + error.message);
 		}
+	}
+
+	function groupIntoNFLWeeks(sortedMatchups) {
+		const weeks = [];
+		let currentWeek = [];
+		let weekStartDate = null;
+
+		for (const matchup of sortedMatchups) {
+			const matchupDate = new Date(matchup.commence_time);
+
+			if (weekStartDate === null || isNewNFLWeek(weekStartDate, matchupDate)) {
+				if (currentWeek.length > 0) {
+					weeks.push(currentWeek);
+				}
+				currentWeek = [];
+				weekStartDate = new Date(matchupDate);
+			}
+
+			currentWeek.push(matchup);
+		}
+
+		if (currentWeek.length > 0) {
+			weeks.push(currentWeek);
+		}
+
+		return weeks;
+	}
+
+	function findCurrentNFLWeek(weeks) {
+		const now = new Date();
+		for (const week of weeks) {
+			const weekStart = new Date(week[0].commence_time);
+			const weekEnd = new Date(week[week.length - 1].commence_time);
+			weekEnd.setHours(23, 59, 59, 999); // End of the day
+
+			if (now >= weekStart && now <= weekEnd) {
+				return week;
+			}
+
+			// If we've passed the week and not all games are completed, it's still the current week
+			if (now > weekEnd && week.some((matchup) => !matchup.completed)) {
+				return week;
+			}
+		}
+
+		// If no current week found, return the next upcoming week
+		return weeks.find((week) => new Date(week[0].commence_time) > now) || null;
+	}
+
+	function isNewNFLWeek(weekStart, matchupDate) {
+		// Check if the matchup is part of a new NFL week
+		// NFL weeks typically start on Tuesday or Wednesday
+		const daysSinceWeekStart = (matchupDate - weekStart) / (1000 * 60 * 60 * 24);
+		return daysSinceWeekStart >= 3; // If 3 or more days have passed, it's likely a new week
 	}
 
 	async function getVotesForMatchup(matchupId: string) {
