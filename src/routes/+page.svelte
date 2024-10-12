@@ -27,6 +27,8 @@
 	];
 	let realtimeSubscription: any;
 	let userVotes: { [key: string]: string } = {};
+	let showShareModal: boolean = false;
+
 	async function loadUserVotes() {
 		if (!user) return;
 		const { data, error } = await supabase
@@ -244,6 +246,7 @@
 							...matchup,
 							home_votes: votes.filter((v) => v.vote === 'home').length,
 							away_votes: votes.filter((v) => v.vote === 'away').length,
+							skip_votes: votes.filter((v) => v.vote === 'skip').length,
 							odds: matchup.bookmakers
 								.filter((bookmaker) =>
 									['DraftKings', 'FanDuel', 'BetMGM'].includes(bookmaker.title)
@@ -258,6 +261,7 @@
 						};
 					})
 			);
+			console.log(matchups);
 		} catch (error) {
 			showModalMessage('Error loading matchups: ' + error.message);
 		}
@@ -265,7 +269,6 @@
 
 	async function getVotesForMatchup(matchupId: string) {
 		const { data, error } = await supabase.from('votes').select('*').eq('matchup_id', matchupId);
-
 		if (error) {
 			console.error('Error fetching votes:', error);
 			return [];
@@ -273,7 +276,7 @@
 		return data;
 	}
 
-	async function submitVote(matchupId: string, vote: string) {
+	async function submitVote(matchupId: string, vote: string, matchup: string) {
 		isLoading = true;
 
 		try {
@@ -308,7 +311,7 @@
 				// Insert a new vote
 				({ data, error } = await supabase
 					.from('votes')
-					.insert([{ matchup_id: matchupId, user_id: user.id, vote }])
+					.insert([{ matchup_id: matchupId, user_id: user.id, vote, matchup }])
 					.select());
 			}
 
@@ -380,6 +383,23 @@
 		}
 		return 'N/A';
 	}
+
+	function getMostVotedOption(matchup: any) {
+		const votes = [
+			{ option: 'home', votes: matchup.home_votes, team: matchup.home_team },
+			{ option: 'away', votes: matchup.away_votes, team: matchup.away_team },
+			{ option: 'skip', votes: matchup.skip_votes || 0, team: 'skip' }
+		];
+		return votes.reduce((max, current) => (current.votes > max.votes ? current : max));
+	}
+
+	function openShareModal() {
+		showShareModal = true;
+	}
+
+	function closeShareModal() {
+		showShareModal = false;
+	}
 </script>
 
 <main class="min-h-screen bg-gray-900 text-gray-100 p-4 sm:p-6">
@@ -433,12 +453,20 @@
 			<div class="bg-gray-800 rounded-lg shadow-lg p-4 sm:p-6 mb-6">
 				<div class="flex flex-col sm:flex-row justify-between items-center mb-6">
 					<h1 class="text-2xl font-bold mb-4 sm:mb-0">Welcome, {user?.username}!</h1>
-					<button
-						on:click={signOut}
-						class="w-full sm:w-auto bg-red-600 text-white rounded-md px-4 py-2 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50 transition-colors"
-					>
-						Sign Out
-					</button>
+					<div class="flex space-x-2">
+						<button
+							on:click={openShareModal}
+							class="bg-blue-600 text-white rounded-md px-4 py-2 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors"
+						>
+							Share Results
+						</button>
+						<button
+							on:click={signOut}
+							class="bg-red-600 text-white rounded-md px-4 py-2 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50 transition-colors"
+						>
+							Sign Out
+						</button>
+					</div>
 				</div>
 				<h2 class="text-xl font-semibold mb-4">NFL Matchups</h2>
 				{#each matchups as matchup (matchup.id)}
@@ -477,7 +505,8 @@
 								class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 mb-4 sm:mb-0"
 							>
 								<button
-									on:click={() => submitVote(matchup.id, 'away')}
+									on:click={() =>
+										submitVote(matchup.id, 'away', `${matchup.away_team} vs ${matchup.home_team}`)}
 									class="w-full sm:w-auto text-white rounded-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-colors"
 									class:bg-gray-500={userVotes[matchup.id] !== 'away'}
 									class:hover:bg-gray-600={userVotes[matchup.id] !== 'away'}
@@ -490,7 +519,8 @@
 									Away {matchup.away_team}
 								</button>
 								<button
-									on:click={() => submitVote(matchup.id, 'home')}
+									on:click={() =>
+										submitVote(matchup.id, 'home', `${matchup.away_team} vs ${matchup.home_team}`)}
 									class="w-full sm:w-auto text-white rounded-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-colors"
 									class:bg-gray-500={userVotes[matchup.id] !== 'home'}
 									class:hover:bg-gray-600={userVotes[matchup.id] !== 'home'}
@@ -503,7 +533,8 @@
 									Home {matchup.home_team}
 								</button>
 								<button
-									on:click={() => submitVote(matchup.id, 'skip')}
+									on:click={() =>
+										submitVote(matchup.id, 'skip', `${matchup.away_team} vs ${matchup.home_team}`)}
 									class="w-full sm:w-auto text-white rounded-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-colors"
 									class:bg-gray-500={userVotes[matchup.id] !== 'skip'}
 									class:hover:bg-gray-600={userVotes[matchup.id] !== 'skip'}
@@ -547,6 +578,52 @@
 				>
 					Close
 				</button>
+			</div>
+		</div>
+	{/if}
+	{#if showShareModal}
+		<div
+			class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2"
+			on:click={closeShareModal}
+		>
+			<div
+				class="bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl max-h-[95vh] overflow-hidden flex flex-col"
+				on:click|stopPropagation
+			>
+				<div class="p-4 overflow-y-auto flex-grow">
+					<h2 class="text-xl font-bold mb-2">Most Voted Teams</h2>
+					<div class="grid grid-cols-2 gap-2">
+						{#each matchups as matchup (matchup.id)}
+							{@const mostVoted = getMostVotedOption(matchup)}
+							<div
+								class="bg-gray-700 flex flex-col items-center justify-center rounded-lg p-2 gap-1 text-md"
+							>
+								<h3 class="font-semibold mb-1 text-center">
+									{matchup.home_team.split(' ').slice(-1)[0]} vs {matchup.away_team
+										.split(' ')
+										.slice(-1)[0]}
+								</h3>
+								<div
+									class="flex items-center justify-center py-2 px-2 rounded-md text-center font-medium bg-green-600 w-full"
+								>
+									{#if mostVoted.option === 'skip'}
+										Skip
+									{:else}
+										{mostVoted.team.split(' ').slice(-1)[0]}
+									{/if}
+								</div>
+							</div>
+						{/each}
+					</div>
+				</div>
+				<div class="p-2 border-t border-gray-700">
+					<button
+						on:click={closeShareModal}
+						class="w-full bg-blue-600 text-white rounded-md px-4 py-2 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors text-md"
+					>
+						Close
+					</button>
+				</div>
 			</div>
 		</div>
 	{/if}
