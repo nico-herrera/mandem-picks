@@ -289,8 +289,6 @@
 					(a, b) => new Date(a.commence_time).getTime() - new Date(b.commence_time).getTime()
 				);
 			});
-
-			console.log(matchupsByWeek);
 		} catch (error) {
 			showModalMessage('Error loading matchups: ' + error.message);
 		}
@@ -327,6 +325,7 @@
 			if (existingVote) {
 				if (existingVote.vote === vote) {
 					showModalMessage('You have already voted for this option.');
+					isLoading = false;
 					return;
 				} else {
 					// Update the existing vote
@@ -349,28 +348,7 @@
 			}
 
 			// Update local state to reflect the new or updated vote
-			const matchupIndex = matchups.findIndex((m) => m.id === matchupId);
-			if (matchupIndex !== -1) {
-				if (existingVote) {
-					// Decrease the count for the old vote
-					if (existingVote.vote === 'home') {
-						matchups[matchupIndex].home_votes -= 1;
-					} else if (existingVote.vote === 'away') {
-						matchups[matchupIndex].away_votes -= 1;
-					} else if (existingVote.vote === 'skip') {
-						matchups[matchupIndex].skip_votes -= 1;
-					}
-				}
-				// Increase the count for the new vote
-				if (vote === 'home') {
-					matchups[matchupIndex].home_votes += 1;
-				} else if (vote === 'away') {
-					matchups[matchupIndex].away_votes += 1;
-				} else if (vote === 'skip') {
-					matchups[matchupIndex].skip_votes += 1;
-				}
-				matchups = [...matchups]; // Trigger reactivity
-			}
+			updateMatchupVotes(matchupId, vote, existingVote?.vote);
 
 			// Update userVotes
 			userVotes[matchupId] = vote;
@@ -381,6 +359,30 @@
 		} finally {
 			isLoading = false;
 		}
+	}
+
+	function updateMatchupVotes(matchupId: string, newVote: string, oldVote?: string) {
+		Object.keys(matchupsByWeek).forEach((week) => {
+			const matchupIndex = matchupsByWeek[week].findIndex((m) => m.id === matchupId);
+			if (matchupIndex !== -1) {
+				const matchup = matchupsByWeek[week][matchupIndex];
+
+				// Decrease the count for the old vote
+				if (oldVote) {
+					if (oldVote === 'home') matchup.home_votes--;
+					else if (oldVote === 'away') matchup.away_votes--;
+					else if (oldVote === 'skip') matchup.skip_votes--;
+				}
+
+				// Increase the count for the new vote
+				if (newVote === 'home') matchup.home_votes++;
+				else if (newVote === 'away') matchup.away_votes++;
+				else if (newVote === 'skip') matchup.skip_votes++;
+
+				matchupsByWeek[week][matchupIndex] = { ...matchup };
+				matchupsByWeek = { ...matchupsByWeek };
+			}
+		});
 	}
 
 	function subscribeToVotes() {
