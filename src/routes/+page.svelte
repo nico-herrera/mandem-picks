@@ -223,27 +223,12 @@
 		localStorage.removeItem('user');
 	}
 
-	async function processMatchups(matchupsToProcess) {
-		return Promise.all(
-			matchupsToProcess.map(async (matchup) => {
-				const votes = await getVotesForMatchup(matchup.id);
-				return {
-					...matchup,
-					home_votes: votes.filter((v) => v.vote === 'home').length,
-					away_votes: votes.filter((v) => v.vote === 'away').length,
-					skip_votes: votes.filter((v) => v.vote === 'skip').length,
-					odds: matchup.bookmakers
-						.filter((bookmaker) => ['DraftKings', 'FanDuel', 'BetMGM'].includes(bookmaker.title))
-						.map((bookmaker) => ({
-							name: bookmaker.title,
-							odds: bookmaker.markets.reduce((acc, market) => {
-								acc[market.key] = market.outcomes;
-								return acc;
-							}, {})
-						}))
-				};
-			})
-		);
+	let matchupsByWeek: { [week: string]: any[] } = {};
+
+	function getWeekStart(date: Date): Date {
+		const day = date.getDay();
+		const diff = date.getDate() - day + (day === 0 ? -3 : 4); // adjust when day is sunday
+		return new Date(date.setDate(diff));
 	}
 
 	async function loadMatchups() {
@@ -254,82 +239,48 @@
 			}
 			const data = await response.json();
 
-			// Sort matchups by commence_time
-			const sortedMatchups = data.sort(
-				(a, b) => new Date(a.commence_time) - new Date(b.commence_time)
+			const processedMatchups = await Promise.all(
+				data.map(async (matchup) => {
+					const votes = await getVotesForMatchup(matchup.id);
+					return {
+						...matchup,
+						home_votes: votes.filter((v) => v.vote === 'home').length,
+						away_votes: votes.filter((v) => v.vote === 'away').length,
+						skip_votes: votes.filter((v) => v.vote === 'skip').length,
+						odds: matchup.bookmakers
+							.filter((bookmaker) => ['DraftKings', 'FanDuel', 'BetMGM'].includes(bookmaker.title))
+							.map((bookmaker) => ({
+								name: bookmaker.title,
+								odds: bookmaker.markets.reduce((acc, market) => {
+									acc[market.key] = market.outcomes;
+									return acc;
+								}, {})
+							}))
+					};
+				})
 			);
 
-			// Group matchups into NFL weeks
-			const weeks = groupIntoNFLWeeks(sortedMatchups);
+			// Group matchups by week
+			matchupsByWeek = processedMatchups.reduce((acc, matchup) => {
+				const gameDate = new Date(matchup.commence_time);
+				const weekStart = getWeekStart(gameDate);
+				const weekKey = `Week of ${weekStart.toLocaleDateString()}`;
+				if (!acc[weekKey]) {
+					acc[weekKey] = [];
+				}
+				acc[weekKey].push(matchup);
+				return acc;
+			}, {});
 
-			// Find the current NFL week
-			const currentWeek = findCurrentNFLWeek(weeks);
-
-			if (currentWeek) {
-				matchups = await processMatchups(currentWeek);
-			} else {
-				// If no current week found, show the next upcoming week
-				matchups = await processMatchups(weeks[0] || []);
-			}
-
-			console.log(matchups);
+			// Sort matchups within each week by date
+			Object.keys(matchupsByWeek).forEach((week) => {
+				matchupsByWeek[week].sort(
+					(a, b) => new Date(a.commence_time).getTime() - new Date(b.commence_time).getTime()
+				);
+			});
 		} catch (error) {
 			showModalMessage('Error loading matchups: ' + error.message);
 		}
-	}
-
-	function groupIntoNFLWeeks(sortedMatchups) {
-		const weeks = [];
-		let currentWeek = [];
-		let weekStartDate = null;
-
-		for (const matchup of sortedMatchups) {
-			const matchupDate = new Date(matchup.commence_time);
-
-			if (weekStartDate === null || isNewNFLWeek(weekStartDate, matchupDate)) {
-				if (currentWeek.length > 0) {
-					weeks.push(currentWeek);
-				}
-				currentWeek = [];
-				weekStartDate = new Date(matchupDate);
-			}
-
-			currentWeek.push(matchup);
-		}
-
-		if (currentWeek.length > 0) {
-			weeks.push(currentWeek);
-		}
-
-		return weeks;
-	}
-
-	function findCurrentNFLWeek(weeks) {
-		const now = new Date();
-		for (const week of weeks) {
-			const weekStart = new Date(week[0].commence_time);
-			const weekEnd = new Date(week[week.length - 1].commence_time);
-			weekEnd.setHours(23, 59, 59, 999); // End of the day
-
-			if (now >= weekStart && now <= weekEnd) {
-				return week;
-			}
-
-			// If we've passed the week and not all games are completed, it's still the current week
-			if (now > weekEnd && week.some((matchup) => !matchup.completed)) {
-				return week;
-			}
-		}
-
-		// If no current week found, return the next upcoming week
-		return weeks.find((week) => new Date(week[0].commence_time) > now) || null;
-	}
-
-	function isNewNFLWeek(weekStart, matchupDate) {
-		// Check if the matchup is part of a new NFL week
-		// NFL weeks typically start on Tuesday or Wednesday
-		const daysSinceWeekStart = (matchupDate - weekStart) / (1000 * 60 * 60 * 24);
-		return daysSinceWeekStart >= 3; // If 3 or more days have passed, it's likely a new week
 	}
 
 	async function getVotesForMatchup(matchupId: string) {
@@ -534,96 +485,113 @@
 					</div>
 				</div>
 				<h2 class="text-xl font-semibold mb-4">NFL Matchups</h2>
-				{#each matchups as matchup (matchup.id)}
-					<div class="bg-gray-700 rounded-lg p-4 mb-4">
-						<h3 class="text-lg font-semibold mb-2">
-							{matchup.home_team} vs {matchup.away_team}
-						</h3>
-						<p class="text-sm text-gray-400 mb-4">
-							Game Date: {new Date(matchup.commence_time).toLocaleString()}
-						</p>
-						<div class="overflow-x-auto">
-							<table class="w-full text-sm text-left text-gray-300">
-								<thead class="text-xs uppercase bg-gray-600 text-gray-300">
-									<tr>
-										<th scope="col" class="px-4 py-3">Bookmaker</th>
-										<th scope="col" class="px-4 py-3">Odds</th>
-									</tr>
-								</thead>
-								<tbody>
-									{#each matchup.odds as bookmaker}
-										<tr class="border-b border-gray-600">
-											<th scope="row" class="px-4 py-3 font-medium whitespace-nowrap">
-												{bookmaker.name}
-											</th>
-											<td class="px-4 py-3">
-												{getOddsDisplay(bookmaker.odds)}
-											</td>
-										</tr>
-									{/each}
-								</tbody>
-							</table>
-						</div>
+				{#each Object.entries(matchupsByWeek) as [week, matchups]}
+					<div class="mb-8">
+						<h3 class="text-lg font-semibold mb-4 bg-indigo-700 p-2 rounded-lg">{week}</h3>
+						{#each matchups as matchup (matchup.id)}
+							<div class="bg-gray-700 rounded-lg p-4 mb-4">
+								<h4 class="text-lg font-semibold mb-2">
+									{matchup.home_team} vs {matchup.away_team}
+								</h4>
+								<p class="text-sm text-gray-400 mb-4">
+									Game Date: {new Date(matchup.commence_time).toLocaleString()}
+								</p>
+								<div class="overflow-x-auto">
+									<table class="w-full text-sm text-left text-gray-300">
+										<thead class="text-xs uppercase bg-gray-600 text-gray-300">
+											<tr>
+												<th scope="col" class="px-4 py-3">Bookmaker</th>
+												<th scope="col" class="px-4 py-3">Odds</th>
+											</tr>
+										</thead>
+										<tbody>
+											{#each matchup.odds as bookmaker}
+												<tr class="border-b border-gray-600">
+													<th scope="row" class="px-4 py-3 font-medium whitespace-nowrap">
+														{bookmaker.name}
+													</th>
+													<td class="px-4 py-3">
+														{getOddsDisplay(bookmaker.odds)}
+													</td>
+												</tr>
+											{/each}
+										</tbody>
+									</table>
+								</div>
 
-						<div class="flex flex-col sm:flex-row justify-between items-center mt-4">
-							<div
-								class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 mb-4 sm:mb-0"
-							>
-								<button
-									on:click={() =>
-										submitVote(matchup.id, 'away', `${matchup.away_team} vs ${matchup.home_team}`)}
-									class="w-full sm:w-auto text-white rounded-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-colors"
-									class:bg-gray-500={userVotes[matchup.id] !== 'away'}
-									class:hover:bg-gray-600={userVotes[matchup.id] !== 'away'}
-									class:focus:ring-gray-400={userVotes[matchup.id] !== 'away'}
-									class:bg-green-600={userVotes[matchup.id] === 'away'}
-									class:hover:bg-green-700={userVotes[matchup.id] === 'away'}
-									class:focus:ring-green-500={userVotes[matchup.id] === 'away'}
-									disabled={isLoading}
-								>
-									Away {matchup.away_team}
-								</button>
-								<button
-									on:click={() =>
-										submitVote(matchup.id, 'home', `${matchup.away_team} vs ${matchup.home_team}`)}
-									class="w-full sm:w-auto text-white rounded-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-colors"
-									class:bg-gray-500={userVotes[matchup.id] !== 'home'}
-									class:hover:bg-gray-600={userVotes[matchup.id] !== 'home'}
-									class:focus:ring-gray-400={userVotes[matchup.id] !== 'home'}
-									class:bg-green-600={userVotes[matchup.id] === 'home'}
-									class:hover:bg-green-700={userVotes[matchup.id] === 'home'}
-									class:focus:ring-green-500={userVotes[matchup.id] === 'home'}
-									disabled={isLoading}
-								>
-									Home {matchup.home_team}
-								</button>
-								<button
-									on:click={() =>
-										submitVote(matchup.id, 'skip', `${matchup.away_team} vs ${matchup.home_team}`)}
-									class="w-full sm:w-auto text-white rounded-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-colors"
-									class:bg-gray-500={userVotes[matchup.id] !== 'skip'}
-									class:hover:bg-gray-600={userVotes[matchup.id] !== 'skip'}
-									class:focus:ring-gray-400={userVotes[matchup.id] !== 'skip'}
-									class:bg-yellow-600={userVotes[matchup.id] === 'skip'}
-									class:hover:bg-yellow-700={userVotes[matchup.id] === 'skip'}
-									class:focus:ring-yellow-500={userVotes[matchup.id] === 'skip'}
-									disabled={isLoading}
-								>
-									Skip
-								</button>
+								<div class="flex flex-col sm:flex-row justify-between items-center mt-4">
+									<div
+										class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 mb-4 sm:mb-0"
+									>
+										<button
+											on:click={() =>
+												submitVote(
+													matchup.id,
+													'away',
+													`${matchup.away_team} vs ${matchup.home_team}`
+												)}
+											class="w-full sm:w-auto text-white rounded-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-colors"
+											class:bg-gray-500={userVotes[matchup.id] !== 'away'}
+											class:hover:bg-gray-600={userVotes[matchup.id] !== 'away'}
+											class:focus:ring-gray-400={userVotes[matchup.id] !== 'away'}
+											class:bg-green-600={userVotes[matchup.id] === 'away'}
+											class:hover:bg-green-700={userVotes[matchup.id] === 'away'}
+											class:focus:ring-green-500={userVotes[matchup.id] === 'away'}
+											disabled={isLoading}
+										>
+											Away {matchup.away_team}
+										</button>
+										<button
+											on:click={() =>
+												submitVote(
+													matchup.id,
+													'home',
+													`${matchup.away_team} vs ${matchup.home_team}`
+												)}
+											class="w-full sm:w-auto text-white rounded-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-colors"
+											class:bg-gray-500={userVotes[matchup.id] !== 'home'}
+											class:hover:bg-gray-600={userVotes[matchup.id] !== 'home'}
+											class:focus:ring-gray-400={userVotes[matchup.id] !== 'home'}
+											class:bg-green-600={userVotes[matchup.id] === 'home'}
+											class:hover:bg-green-700={userVotes[matchup.id] === 'home'}
+											class:focus:ring-green-500={userVotes[matchup.id] === 'home'}
+											disabled={isLoading}
+										>
+											Home {matchup.home_team}
+										</button>
+										<button
+											on:click={() =>
+												submitVote(
+													matchup.id,
+													'skip',
+													`${matchup.away_team} vs ${matchup.home_team}`
+												)}
+											class="w-full sm:w-auto text-white rounded-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-colors"
+											class:bg-gray-500={userVotes[matchup.id] !== 'skip'}
+											class:hover:bg-gray-600={userVotes[matchup.id] !== 'skip'}
+											class:focus:ring-gray-400={userVotes[matchup.id] !== 'skip'}
+											class:bg-yellow-600={userVotes[matchup.id] === 'skip'}
+											class:hover:bg-yellow-700={userVotes[matchup.id] === 'skip'}
+											class:focus:ring-yellow-500={userVotes[matchup.id] === 'skip'}
+											disabled={isLoading}
+										>
+											Skip
+										</button>
+									</div>
+									<div class="text-center sm:text-right">
+										<p class="text-sm font-semibold">
+											{matchup.home_team}: {matchup.home_votes}
+										</p>
+										<p class="text-sm font-semibold">
+											{matchup.away_team}: {matchup.away_votes}
+										</p>
+										<p class="text-sm font-semibold">
+											Skipped: {matchup.skip_votes || 0}
+										</p>
+									</div>
+								</div>
 							</div>
-							<div class="text-center sm:text-right">
-								<p class="text-sm font-semibold">
-									{matchup.home_team}: {matchup.home_votes}
-								</p>
-								<p class="text-sm font-semibold">
-									{matchup.away_team}: {matchup.away_votes}
-								</p>
-								<p class="text-sm font-semibold">
-									Skipped: {matchup.skip_votes || 0}
-								</p>
-							</div>
-						</div>
+						{/each}
 					</div>
 				{/each}
 			</div>
