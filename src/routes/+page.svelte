@@ -225,10 +225,20 @@
 
 	let matchupsByWeek: { [week: string]: any[] } = {};
 
-	function getWeekStart(date: Date): Date {
-		const day = date.getDay();
-		const diff = date.getDate() - day + (day === 0 ? -3 : 4); // adjust when day is sunday
-		return new Date(date.setDate(diff));
+	function getNFLWeek(date: Date = new Date()): number {
+		const kickoff = new Date(2024, 8, 6); // September 6, 2024
+
+		const daysSinceKickoff = Math.floor(
+			(date.getTime() - kickoff.getTime()) / (1000 * 60 * 60 * 24)
+		);
+		const weeksSinceKickoff = Math.floor(daysSinceKickoff / 7);
+
+		// Adjust for the day of the week (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
+		const dayOfWeek = date.getDay();
+		const isTuesdayOrLater = dayOfWeek > 2 || (dayOfWeek === 2 && date.getHours() >= 0);
+
+		// Add 1 to weeksSinceKickoff to align with the first week being Week 1
+		return weeksSinceKickoff + (isTuesdayOrLater ? 1 : 0) + 1;
 	}
 
 	async function loadMatchups() {
@@ -242,11 +252,14 @@
 			const processedMatchups = await Promise.all(
 				data.map(async (matchup) => {
 					const votes = await getVotesForMatchup(matchup.id);
+					const gameDate = new Date(matchup.commence_time);
+					const nflWeek = getNFLWeek(gameDate);
 					return {
 						...matchup,
 						home_votes: votes.filter((v) => v.vote === 'home').length,
 						away_votes: votes.filter((v) => v.vote === 'away').length,
 						skip_votes: votes.filter((v) => v.vote === 'skip').length,
+						nflWeek,
 						odds: matchup.bookmakers
 							.filter((bookmaker) => ['DraftKings', 'FanDuel', 'BetMGM'].includes(bookmaker.title))
 							.map((bookmaker) => ({
@@ -260,11 +273,9 @@
 				})
 			);
 
-			// Group matchups by week
+			// Group matchups by NFL week
 			matchupsByWeek = processedMatchups.reduce((acc, matchup) => {
-				const gameDate = new Date(matchup.commence_time);
-				const weekStart = getWeekStart(gameDate);
-				const weekKey = `Week of ${weekStart.toLocaleDateString()}`;
+				const weekKey = `Week ${matchup.nflWeek}`;
 				if (!acc[weekKey]) {
 					acc[weekKey] = [];
 				}
@@ -278,6 +289,8 @@
 					(a, b) => new Date(a.commence_time).getTime() - new Date(b.commence_time).getTime()
 				);
 			});
+
+			console.log(matchupsByWeek);
 		} catch (error) {
 			showModalMessage('Error loading matchups: ' + error.message);
 		}
