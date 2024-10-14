@@ -639,26 +639,35 @@
 				on:click|stopPropagation
 			>
 				<div class="p-4 overflow-y-auto flex-grow">
-					<h2 class="text-xl font-bold mb-2">Most Voted Teams</h2>
-					<div class="grid grid-cols-2 gap-2">
-						{#each matchups as matchup (matchup.id)}
-							{@const mostVoted = getMostVotedOption(matchup)}
-							<div
-								class="bg-gray-700 flex flex-col items-center justify-center rounded-lg p-2 gap-1 text-sm"
-							>
-								<h3 class="font-semibold mb-1 text-center">
-									{matchup.home_team.split(' ').slice(-1)[0]} vs {matchup.away_team
-										.split(' ')
-										.slice(-1)[0]}
-								</h3>
-								<div
-									class="flex items-center justify-center py-2 px-2 rounded-md text-center font-medium bg-green-600 w-full"
-								>
-									{#if mostVoted.option === 'skip'}
-										Skip
-									{:else}
-										{mostVoted.team.split(' ').slice(-1)[0]}
-									{/if}
+					<h2 class="text-xl font-bold mb-4">Most Voted Teams</h2>
+					<div class="space-y-4">
+						{#each Object.entries(matchupsByWeek) as [week, matchups]}
+							<div>
+								<h3 class="text-sm font-semibold mb-2 text-gray-400">{week}</h3>
+								<div class="grid grid-cols-2 gap-2">
+									{#each matchups as matchup (matchup.id)}
+										{@const mostVoted = getMostVotedOption(matchup)}
+										<div
+											class="bg-gray-700 flex flex-col items-center justify-center rounded-lg p-2 gap-1"
+										>
+											<h4 class="font-semibold text-center text-sm">
+												{matchup.away_team.split(' ').slice(-1)[0]} @ {matchup.home_team
+													.split(' ')
+													.slice(-1)[0]}
+											</h4>
+											<div
+												class="flex items-center justify-center py-1 px-2 rounded-md text-center font-medium w-full text-sm"
+												class:bg-green-600={mostVoted.option !== 'skip'}
+												class:bg-yellow-600={mostVoted.option === 'skip'}
+											>
+												{#if mostVoted.option === 'skip'}
+													Skip
+												{:else}
+													{mostVoted.team.split(' ').slice(-1)[0]}
+												{/if}
+											</div>
+										</div>
+									{/each}
 								</div>
 							</div>
 						{/each}
