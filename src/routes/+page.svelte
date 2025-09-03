@@ -9,6 +9,7 @@
 	let user: any = null;
 	let matchups: any[] = [];
 	let isLoading: boolean = false;
+	let isInitialLoading: boolean = true;
 	let showAuthForm: boolean = true;
 	let showModal: boolean = false;
 	let modalMessage: string = '';
@@ -23,11 +24,13 @@
 		'NCR',
 		'Nelson',
 		'Nico',
-		'Jacob'
+		'Jacob',
+		'Reece'
 	];
 	let realtimeSubscription: any;
 	let userVotes: { [key: string]: string } = {};
 	let showShareModal: boolean = false;
+	let showShareOptionsModal: boolean = false;
 
 	async function loadUserVotes() {
 		if (!user) return;
@@ -47,12 +50,18 @@
 	}
 
 	onMount(async () => {
-		const storedUser = localStorage.getItem('user');
-		if (storedUser) {
-			user = JSON.parse(storedUser);
-			showAuthForm = false;
-			await loadMatchups();
-			await loadUserVotes();
+		try {
+			const storedUser = localStorage.getItem('user');
+			if (storedUser) {
+				user = JSON.parse(storedUser);
+				showAuthForm = false;
+				await loadMatchups();
+				await loadUserVotes();
+			}
+		} catch (error) {
+			console.error('Error during initial load:', error);
+		} finally {
+			isInitialLoading = false;
 		}
 	});
 
@@ -226,19 +235,20 @@
 	let matchupsByWeek: { [week: string]: any[] } = {};
 
 	function getNFLWeek(date: Date = new Date()): number {
-		const kickoff = new Date(2024, 8, 6); // September 6, 2024
+		const kickoff = new Date(2025, 8, 4); // September 4, 2025
+
+		// If the date is before the season starts, return week 1
+		if (date < kickoff) {
+			return 1;
+		}
 
 		const daysSinceKickoff = Math.floor(
 			(date.getTime() - kickoff.getTime()) / (1000 * 60 * 60 * 24)
 		);
 		const weeksSinceKickoff = Math.floor(daysSinceKickoff / 7);
 
-		// Adjust for the day of the week (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
-		const dayOfWeek = date.getDay();
-		const isTuesdayOrLater = dayOfWeek > 2 || (dayOfWeek === 2 && date.getHours() >= 0);
-
-		// Add 1 to weeksSinceKickoff to align with the first week being Week 1
-		return weeksSinceKickoff + (isTuesdayOrLater ? 1 : 0) + 1;
+		// Week 1 starts on kickoff day, so add 1 to make it 1-indexed
+		return weeksSinceKickoff + 1;
 	}
 
 	async function loadMatchups() {
@@ -273,8 +283,17 @@
 				})
 			);
 
-			// Group matchups by NFL week
-			matchupsByWeek = processedMatchups.reduce((acc, matchup) => {
+			// Get current NFL week and next week
+			const currentWeek = getNFLWeek();
+			const nextWeek = currentWeek + 1;
+			
+			// Filter matchups to only show current week and next week
+			const filteredMatchups = processedMatchups.filter(matchup => {
+				return matchup.nflWeek === currentWeek || matchup.nflWeek === nextWeek;
+			});
+
+			// Group filtered matchups by NFL week
+			matchupsByWeek = filteredMatchups.reduce((acc, matchup) => {
 				const weekKey = `Week ${matchup.nflWeek}`;
 				if (!acc[weekKey]) {
 					acc[weekKey] = [];
@@ -424,17 +443,65 @@
 		return votes.reduce((max, current) => (current.votes > max.votes ? current : max));
 	}
 
-	function openShareModal() {
+	function openShareOptionsModal() {
+		showShareOptionsModal = true;
+	}
+
+	function closeShareOptionsModal() {
+		showShareOptionsModal = false;
+	}
+
+	function openShareModal(weekType: 'current' | 'next') {
+		showShareOptionsModal = false;
+		
+		// Filter matchups by the selected week
+		const currentWeek = getNFLWeek();
+		const targetWeek = weekType === 'current' ? currentWeek : currentWeek + 1;
+		
+		// Filter matchupsByWeek to only include the selected week
+		const filteredMatchupsByWeek: { [week: string]: any[] } = {};
+		Object.entries(matchupsByWeek).forEach(([weekKey, matchups]) => {
+			const weekNumber = parseInt(weekKey.replace('Week ', ''));
+			if (weekNumber === targetWeek) {
+				filteredMatchupsByWeek[weekKey] = matchups;
+			}
+		});
+		
+		// Update the global matchupsByWeek temporarily for the share modal
+		const originalMatchupsByWeek = { ...matchupsByWeek };
+		matchupsByWeek = filteredMatchupsByWeek;
+		
 		showShareModal = true;
+		
+		// Restore original matchups when modal closes
+		setTimeout(() => {
+			if (!showShareModal) {
+				matchupsByWeek = originalMatchupsByWeek;
+			}
+		}, 100);
 	}
 
 	function closeShareModal() {
 		showShareModal = false;
+		// Small delay to allow modal animation to complete before restoring data
+		setTimeout(() => {
+			if (!showShareModal) {
+				loadMatchups(); // Reload to restore all weeks
+			}
+		}, 300);
 	}
 </script>
 
 <main class="min-h-screen bg-gray-900 text-gray-100 p-4 sm:p-6">
-	{#if showAuthForm}
+	{#if isInitialLoading}
+		<div class="flex items-center justify-center min-h-screen" transition:fade>
+			<div class="text-center">
+				<div class="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-500 mx-auto mb-4"></div>
+				<h2 class="text-xl font-semibold text-gray-300">Loading Mandem Picks...</h2>
+				<p class="text-gray-400 mt-2">Please wait while we load your data</p>
+			</div>
+		</div>
+	{:else if showAuthForm}
 		<div class="flex items-center justify-center min-h-screen" transition:fade>
 			<div class="w-full max-w-md bg-gray-800 rounded-lg shadow-xl p-6 sm:p-8">
 				<h1 class="text-2xl font-bold mb-6 text-center">Welcome to Mandem Picks!</h1>
@@ -484,9 +551,23 @@
 			<div class="bg-gray-800 rounded-lg shadow-lg p-4 sm:p-6 mb-6">
 				<div class="flex flex-col sm:flex-row justify-between items-center mb-6">
 					<h1 class="text-2xl font-bold mb-4 sm:mb-0">Welcome, {user?.username}!</h1>
-					<div class="flex space-x-2">
+					<div class="flex flex-wrap gap-2">
+						<a
+							href="/results"
+							class="bg-green-600 text-white rounded-md px-4 py-2 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 transition-colors"
+						>
+							Results Tracker
+						</a>
+						{#if user?.username === 'nico'}
+							<a
+								href="/admin"
+								class="bg-purple-600 text-white rounded-md px-4 py-2 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-50 transition-colors"
+							>
+								Admin
+							</a>
+						{/if}
 						<button
-							on:click={openShareModal}
+							on:click={openShareOptionsModal}
 							class="bg-blue-600 text-white rounded-md px-4 py-2 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors"
 						>
 							Share Results
@@ -629,6 +710,50 @@
 			</div>
 		</div>
 	{/if}
+	{#if showShareOptionsModal}
+		<div
+			class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+			on:click={closeShareOptionsModal}
+		>
+			<div
+				class="bg-gray-800 rounded-lg shadow-xl w-full max-w-md p-6"
+				on:click|stopPropagation
+			>
+				<div class="mb-6">
+					<h2 class="text-xl font-bold mb-2">Share Results</h2>
+					<p class="text-gray-400 text-sm">Choose which week's picks you want to share</p>
+				</div>
+				
+				<div class="space-y-3">
+					<button
+						on:click={() => openShareModal('current')}
+						class="w-full bg-blue-600 text-white rounded-md px-4 py-3 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors text-left"
+					>
+						<div class="font-medium">Current Week</div>
+						<div class="text-sm text-blue-200">Share this week's most voted picks</div>
+					</button>
+					
+					<button
+						on:click={() => openShareModal('next')}
+						class="w-full bg-green-600 text-white rounded-md px-4 py-3 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 transition-colors text-left"
+					>
+						<div class="font-medium">Next Week</div>
+						<div class="text-sm text-green-200">Share next week's most voted picks</div>
+					</button>
+				</div>
+				
+				<div class="mt-6">
+					<button
+						on:click={closeShareOptionsModal}
+						class="w-full bg-gray-600 text-white rounded-md px-4 py-2 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-50 transition-colors"
+					>
+						Cancel
+					</button>
+				</div>
+			</div>
+		</div>
+	{/if}
+
 	{#if showShareModal}
 		<div
 			class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2"

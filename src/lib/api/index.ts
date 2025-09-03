@@ -23,13 +23,52 @@ export async function submitVote(matchupId: string, userId: string, vote: string
 }
 
 export async function getVotesForMatchup(matchupId: string) {
-	const { data, error } = await supabase
-		.from('votes')
-		.select('vote, count')
-		.eq('matchup_id', matchupId);
+	const { data, error } = await supabase.from('votes').select('*').eq('matchup_id', matchupId);
 
 	if (error) {
 		throw new Error('Failed to fetch votes: ' + error.message);
 	}
 	return data;
+}
+
+export async function getGameResults() {
+	const { data, error } = await supabase
+		.from('game_results')
+		.select('*')
+		.order('game_date', { ascending: false });
+
+	if (error) {
+		throw new Error('Failed to fetch game results: ' + error.message);
+	}
+	return data || [];
+}
+
+export async function getUserResults(userId: string) {
+	const { data, error } = await supabase
+		.from('votes')
+		.select(
+			`
+			*,
+			game_results!inner(*)
+		`
+		)
+		.eq('user_id', userId);
+
+	if (error) {
+		throw new Error('Failed to fetch user results: ' + error.message);
+	}
+	return data || [];
+}
+
+export async function getAllUserResults() {
+	const { data, error } = await supabase.from('votes').select(`
+			*,
+			users!inner(username),
+			game_results(*)
+		`);
+
+	if (error) {
+		throw new Error('Failed to fetch all user results: ' + error.message);
+	}
+	return data || [];
 }
