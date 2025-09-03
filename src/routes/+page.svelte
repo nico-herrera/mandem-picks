@@ -19,7 +19,7 @@
 		'Branden',
 		'Nobs',
 		'Sam',
-		'Jerruh',
+		'Jerry',
 		'SR24',
 		'NCR',
 		'Nelson',
