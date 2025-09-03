@@ -259,41 +259,48 @@
 			}
 			const data = await response.json();
 
-			const processedMatchups = await Promise.all(
-				data.map(async (matchup) => {
-					const votes = await getVotesForMatchup(matchup.id);
-					const gameDate = new Date(matchup.commence_time);
-					const nflWeek = getNFLWeek(gameDate);
-					return {
-						...matchup,
-						home_votes: votes.filter((v) => v.vote === 'home').length,
-						away_votes: votes.filter((v) => v.vote === 'away').length,
-						skip_votes: votes.filter((v) => v.vote === 'skip').length,
-						nflWeek,
-						odds: matchup.bookmakers
-							.filter((bookmaker) => ['DraftKings', 'FanDuel', 'BetMGM'].includes(bookmaker.title))
-							.map((bookmaker) => ({
-								name: bookmaker.title,
-								odds: bookmaker.markets.reduce((acc, market) => {
-									acc[market.key] = market.outcomes;
-									return acc;
-								}, {})
-							}))
-					};
-				})
-			);
-
-			// Get current NFL week and next week
+			// Get current NFL week and next week first
 			const currentWeek = getNFLWeek();
 			const nextWeek = currentWeek + 1;
-			
-			// Filter matchups to only show current week and next week
-			const filteredMatchups = processedMatchups.filter(matchup => {
-				return matchup.nflWeek === currentWeek || matchup.nflWeek === nextWeek;
+
+			// Pre-filter matchups to current/next week before processing
+			const relevantMatchups = data.filter(matchup => {
+				const gameDate = new Date(matchup.commence_time);
+				const nflWeek = getNFLWeek(gameDate);
+				return nflWeek === currentWeek || nflWeek === nextWeek;
 			});
 
-			// Group filtered matchups by NFL week
-			matchupsByWeek = filteredMatchups.reduce((acc, matchup) => {
+			// Get all matchup IDs for batch vote fetching
+			const matchupIds = relevantMatchups.map(matchup => matchup.id);
+			
+			// Batch fetch votes for only relevant matchups
+			const allVotes = await getVotesForMatchups(matchupIds);
+
+			const processedMatchups = relevantMatchups.map((matchup) => {
+				const votes = allVotes.filter(vote => vote.matchup_id === matchup.id);
+				const gameDate = new Date(matchup.commence_time);
+				const nflWeek = getNFLWeek(gameDate);
+				
+				return {
+					...matchup,
+					home_votes: votes.filter((v) => v.vote === 'home').length,
+					away_votes: votes.filter((v) => v.vote === 'away').length,
+					skip_votes: votes.filter((v) => v.vote === 'skip').length,
+					nflWeek,
+					odds: matchup.bookmakers
+						.filter((bookmaker) => ['DraftKings', 'FanDuel', 'BetMGM'].includes(bookmaker.title))
+						.map((bookmaker) => ({
+							name: bookmaker.title,
+							odds: bookmaker.markets.reduce((acc, market) => {
+								acc[market.key] = market.outcomes;
+								return acc;
+							}, {})
+						}))
+				};
+			});
+
+			// Group processed matchups by NFL week
+			matchupsByWeek = processedMatchups.reduce((acc, matchup) => {
 				const weekKey = `Week ${matchup.nflWeek}`;
 				if (!acc[weekKey]) {
 					acc[weekKey] = [];
@@ -320,6 +327,21 @@
 			return [];
 		}
 		return data;
+	}
+
+	async function getVotesForMatchups(matchupIds: string[]) {
+		if (matchupIds.length === 0) return [];
+		
+		const { data, error } = await supabase
+			.from('votes')
+			.select('*')
+			.in('matchup_id', matchupIds);
+		
+		if (error) {
+			console.error('Error fetching votes for multiple matchups:', error);
+			return [];
+		}
+		return data || [];
 	}
 
 	async function submitVote(matchupId: string, vote: string, matchup: string) {
