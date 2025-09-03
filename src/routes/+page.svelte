@@ -589,9 +589,37 @@
 								<h4 class="text-lg font-semibold mb-2">
 									{matchup.home_team} vs {matchup.away_team}
 								</h4>
-								<p class="text-sm text-gray-400 mb-4">
+								<p class="text-sm text-gray-400 mb-2">
 									Game Date: {new Date(matchup.commence_time).toLocaleString()}
 								</p>
+								{#if matchup.odds && matchup.odds.length > 0 && matchup.odds[0].odds.h2h && matchup.odds[0].odds.h2h.length >= 2}
+									{@const firstBookmaker = matchup.odds[0]}
+									{@const homeOdds = firstBookmaker.odds.h2h.find(team => team.name === matchup.home_team)?.price || 'N/A'}
+									{@const awayOdds = firstBookmaker.odds.h2h.find(team => team.name === matchup.away_team)?.price || 'N/A'}
+									{@const favoriteTeam = homeOdds !== 'N/A' && awayOdds !== 'N/A' && parseFloat(homeOdds) < parseFloat(awayOdds) ? matchup.home_team : matchup.away_team}
+									{@const favoriteOdds = favoriteTeam === matchup.home_team ? homeOdds : awayOdds}
+									{@const underdogTeam = favoriteTeam === matchup.home_team ? matchup.away_team : matchup.home_team}
+									{@const underdogOdds = favoriteTeam === matchup.home_team ? awayOdds : homeOdds}
+									
+									<div class="bg-blue-900 border border-blue-700 rounded-lg p-3 mb-4">
+										<div class="flex items-start space-x-2">
+											<svg class="h-4 w-4 text-blue-400 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+												<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+											</svg>
+											<div class="text-xs text-blue-100">
+												<p class="font-medium mb-1">Understanding These Odds (Decimal Format):</p>
+												{#if homeOdds !== 'N/A' && awayOdds !== 'N/A'}
+													<p><strong>{favoriteTeam}: {favoriteOdds}</strong> (Favorite) - Win ${favoriteOdds} for every $1 bet</p>
+													<p><strong>{underdogTeam}: {underdogOdds}</strong> (Underdog) - Win ${underdogOdds} for every $1 bet</p>
+													<p class="mt-1 text-blue-200">Lower number = favorite | Higher number = underdog</p>
+													<p class="text-blue-300 text-xs mt-1">Example: $10 bet on {underdogTeam} ({underdogOdds}) = ${(parseFloat(underdogOdds) * 10).toFixed(2)} total return</p>
+												{:else}
+													<p>Odds information not available for this matchup</p>
+												{/if}
+											</div>
+										</div>
+									</div>
+								{/if}
 								<div class="overflow-x-auto">
 									<table class="w-full text-sm text-left text-gray-300">
 										<thead class="text-xs uppercase bg-gray-600 text-gray-300">
