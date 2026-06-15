@@ -2,6 +2,9 @@
 	"name": "mandem-picks",
 	"version": "0.0.1",
 	"private": true,
+	"engines": {
+		"node": "22.x"
+	},
 	"scripts": {
 		"dev": "vite dev",
 		"build": "svelte-kit sync && vite build",
