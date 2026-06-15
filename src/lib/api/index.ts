@@ -1,7 +1,7 @@
 import { supabase } from '$lib/supabaseClient';
-import { NEXT_PUBLIC_ODDS_API_KEY } from '$env/static/public';
+import { PUBLIC_ODDS_API_KEY } from '$env/static/public';
 
-const apiKey = NEXT_PUBLIC_ODDS_API_KEY; // Replace with your The-Odds-API key
+const apiKey = PUBLIC_ODDS_API_KEY; // Replace with your The-Odds-API key
 const apiUrl = 'https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds/';
 
 export async function getNFLMatchups() {

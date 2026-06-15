@@ -26,7 +26,7 @@
 --        update public.profiles set is_admin = true
 --        where id = (select id from auth.users where email = 'nico@example.com');
 --   4. Put the project's URL + publishable key in .env
---      (NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY).
+--      (PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_PUBLISHABLE_KEY).
 --
 --   Google users get an auto-generated username (see handle_new_user); there is
 --   no name allowlist. Lock down who can join via the Google OAuth consent
