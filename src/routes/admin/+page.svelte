@@ -196,8 +196,8 @@
 
 						<div class="space-y-4">
 							<div>
-								<label class="mb-2 block text-xs font-medium uppercase tracking-wider text-muted">Select Game</label>
-								<select bind:value={selectedMatchup} class="input-field">
+								<label for="select-game" class="mb-2 block text-xs font-medium uppercase tracking-wider text-muted">Select Game</label>
+								<select id="select-game" bind:value={selectedMatchup} class="input-field">
 									<option value={null}>Choose a game...</option>
 									{#each matchups.filter(m => !hasResult(m.id)) as matchup}
 										{@const gameWeek = getNFLWeek(new Date(matchup.commence_time))}
@@ -213,12 +213,12 @@
 									<h3 class="mb-3 font-semibold">{selectedMatchup.away_team} @ {selectedMatchup.home_team}</h3>
 									<div class="grid grid-cols-2 gap-4">
 										<div>
-											<label class="mb-2 block text-xs font-medium uppercase tracking-wider text-muted">{selectedMatchup.home_team}</label>
-											<input type="number" bind:value={homeScore} min="0" class="input-field" placeholder="0" />
+											<label for="home-score" class="mb-2 block text-xs font-medium uppercase tracking-wider text-muted">{selectedMatchup.home_team}</label>
+											<input id="home-score" type="number" bind:value={homeScore} min="0" class="input-field" placeholder="0" />
 										</div>
 										<div>
-											<label class="mb-2 block text-xs font-medium uppercase tracking-wider text-muted">{selectedMatchup.away_team}</label>
-											<input type="number" bind:value={awayScore} min="0" class="input-field" placeholder="0" />
+											<label for="away-score" class="mb-2 block text-xs font-medium uppercase tracking-wider text-muted">{selectedMatchup.away_team}</label>
+											<input id="away-score" type="number" bind:value={awayScore} min="0" class="input-field" placeholder="0" />
 										</div>
 									</div>
 

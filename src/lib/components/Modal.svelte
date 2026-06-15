@@ -19,16 +19,18 @@
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && close()} />
 
+<!-- Backdrop click-to-close is a mouse convenience; keyboard users close via Escape
+	(svelte:window above) or the footer button. -->
+<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 <div
 	class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-4"
 	transition:fade={{ duration: 150 }}
-	onclick={close}
+	onclick={(e) => e.target === e.currentTarget && close()}
 	role="presentation"
 >
 	<div
 		class="w-full {maxW[size]} max-h-[92vh] overflow-hidden flex flex-col rounded-2xl border border-hairline bg-surface shadow-lift"
 		transition:scale={{ duration: 220, start: 0.96 }}
-		onclick={(e) => e.stopPropagation()}
 		role="dialog"
 		aria-modal="true"
 	>
