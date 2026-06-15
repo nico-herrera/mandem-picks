@@ -415,7 +415,7 @@
 					<div class="space-y-5">
 						{#each matchups as matchup (matchup.id)}
 							{@const totalVotes = matchup.home_votes + matchup.away_votes + (matchup.skip_votes || 0)}
-							<Card padding="p-5 sm:p-6" animate hover>
+							<Card padding="p-5 sm:p-6" hover>
 								<div class="mb-4 flex items-start justify-between gap-4">
 									<div>
 										<h4 class="text-xl font-bold tracking-tight">
