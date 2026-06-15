@@ -1,36 +1,26 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { supabase } from '$lib/supabaseClient';
-	import { fade } from 'svelte/transition';
+	import { fade, fly } from 'svelte/transition';
+	import Button from '$lib/components/Button.svelte';
+	import Card from '$lib/components/Card.svelte';
+	import Modal from '$lib/components/Modal.svelte';
+	import Nav from '$lib/components/Nav.svelte';
+	import { getCurrentUser, type AppUser } from '$lib/auth';
+	import { getNFLWeek } from '$lib/nfl';
+	import { formatAmerican, impliedProbability, profitOnHundred } from '$lib/odds';
 
-	let name: string = '';
-	let favoriteColor: string = '';
-	let favoriteAnimal: string = '';
-	let user: any = null;
-	let matchups: any[] = [];
-	let isLoading: boolean = false;
-	let isInitialLoading: boolean = true;
-	let showAuthForm: boolean = true;
-	let showModal: boolean = false;
-	let modalMessage: string = '';
-	let allowedNames: string[] = [
-		'Jimmy',
-		'Micah',
-		'Branden',
-		'Nobs',
-		'Sam',
-		'Jerry',
-		'SR24',
-		'NCR',
-		'Nelson',
-		'Nico',
-		'Jacob',
-		'Reece'
-	];
+	let user: AppUser | null = $state(null);
+	let matchups: any[] = $state([]);
+	let isLoading: boolean = $state(false);
+	let isInitialLoading: boolean = $state(true);
+	let showAuthForm: boolean = $state(true);
+	let showModal: boolean = $state(false);
+	let modalMessage: string = $state('');
 	let realtimeSubscription: any;
-	let userVotes: { [key: string]: string } = {};
-	let showShareModal: boolean = false;
-	let showShareOptionsModal: boolean = false;
+	let userVotes: { [key: string]: string } = $state({});
+	let showShareModal: boolean = $state(false);
+	let showShareOptionsModal: boolean = $state(false);
 
 	async function loadUserVotes() {
 		if (!user) return;
@@ -51,12 +41,12 @@
 
 	onMount(async () => {
 		try {
-			const storedUser = localStorage.getItem('user');
-			if (storedUser) {
-				user = JSON.parse(storedUser);
+			user = await getCurrentUser();
+			if (user) {
 				showAuthForm = false;
 				await loadMatchups();
 				await loadUserVotes();
+				subscribeToVotes();
 			}
 		} catch (error) {
 			console.error('Error during initial load:', error);
@@ -65,191 +55,28 @@
 		}
 	});
 
-	onMount(async () => {
-		if (user) {
-			await loadMatchups();
-			await loadUserVotes();
-			subscribeToVotes();
-		}
-	});
-
-	function levenshteinDistance(s, t) {
-		const d = [];
-
-		for (let i = 0; i <= s.length; i++) {
-			d[i] = [i];
-		}
-		for (let j = 0; j <= t.length; j++) {
-			d[0][j] = j;
-		}
-
-		for (let j = 1; j <= t.length; j++) {
-			for (let i = 1; i <= s.length; i++) {
-				if (s[i - 1] === t[j - 1]) {
-					d[i][j] = d[i - 1][j - 1];
-				} else {
-					d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + 1);
-				}
-			}
-		}
-
-		return d[s.length][t.length];
-	}
-
-	function findClosestName(inputName: string, names: string[]) {
-		inputName = inputName.toLowerCase();
-		let closestName = names[0].toLowerCase();
-		let smallestDistance = levenshteinDistance(inputName, closestName);
-
-		for (let i = 1; i < names.length; i++) {
-			let currentName = names[i].toLowerCase();
-			let currentDistance = levenshteinDistance(inputName, currentName);
-			if (currentDistance < smallestDistance) {
-				smallestDistance = currentDistance;
-				closestName = names[i]; // Return the original case name
-			}
-		}
-
-		return closestName;
-	}
-
 	function showModalMessage(message: string) {
 		modalMessage = message;
 		showModal = true;
 	}
 
-	function validateInputs() {
-		if (!name || !favoriteColor || !favoriteAnimal) {
-			showModalMessage('Please fill in all fields.');
-			return false;
-		}
-
-		if (name.toLowerCase() === 'nate') {
-			showModalMessage('Did you mean: NCR or Nobs?');
-			return false;
-		} else if (name.toLowerCase() === 'shawn') {
-			showModalMessage('Did you mean: SR24?');
-			return false;
-		}
-
-		if (!allowedNames.map((name) => name.toLowerCase()).includes(name.toLowerCase())) {
-			const closestName = findClosestName(name, allowedNames);
-			showModalMessage(
-				`Unauthorized name. Did you mean: ${closestName}? Allowed names are: ${allowedNames.join(', ')}`
-			);
-			return false;
-		}
-
-		return true;
-	}
-
-	async function handleAuth(isSignUp: boolean, username?: string, password?: string) {
-		if (!username || !password) {
-			if (!validateInputs()) return;
-			username = name.replace(/\s+/g, '').toLowerCase();
-			password = `${favoriteColor}${favoriteAnimal}`.toLowerCase();
-		}
-
-		isLoading = true;
-
-		try {
-			if (isSignUp) {
-				// Check if the user already exists
-				const { data: existingUser, error: existingError } = await supabase
-					.from('users')
-					.select()
-					.eq('username', username)
-					.single();
-
-				if (existingError && existingError.code !== 'PGRST116') {
-					// PGRST116 is the code for "No rows found"
-					throw existingError;
-				}
-
-				if (existingUser) {
-					showModalMessage('User already exists.');
-					isLoading = false;
-					return;
-				}
-
-				// Proceed with sign up if user does not exist
-				const { data, error } = await supabase
-					.from('users')
-					.insert({ username, password })
-					.select()
-					.single();
-
-				if (error) throw error;
-
-				user = data;
-				localStorage.setItem('user', JSON.stringify({ username, password, id: data.id }));
-				showModalMessage('Sign up successful!');
-			} else {
-				// Check if the username exists
-				const { data: userByUsername, error: userError } = await supabase
-					.from('users')
-					.select('*')
-					.eq('username', username)
-					.single();
-
-				if (userError) {
-					throw userError;
-				}
-
-				if (!userByUsername) {
-					showModalMessage('Invalid username.');
-					isLoading = false;
-					return;
-				}
-
-				// Check if the password matches
-				if (userByUsername.password !== password) {
-					showModalMessage('Invalid password.');
-					isLoading = false;
-					return;
-				}
-
-				// If both username and password match
-				user = userByUsername;
-
-				localStorage.setItem('user', JSON.stringify({ username, password, id: user.id }));
-				showAuthForm = false;
-				await loadMatchups();
-				await loadUserVotes();
-			}
-		} catch (error) {
-			console.error('Auth Error:', error);
-			showModalMessage(`Error ${isSignUp ? 'signing up' : 'signing in'}: ${error.message}`);
-		} finally {
-			isLoading = false;
-		}
+	async function signInWithGoogle() {
+		const { error } = await supabase.auth.signInWithOAuth({
+			provider: 'google',
+			options: { redirectTo: `${window.location.origin}/auth/callback` }
+		});
+		// On success the browser is redirected to Google; only errors return here.
+		if (error) showModalMessage(`Google sign-in error: ${error.message}`);
 	}
 
 	async function signOut() {
+		await supabase.auth.signOut();
 		user = null;
 		matchups = [];
 		showAuthForm = true;
-		localStorage.removeItem('user');
 	}
 
-	let matchupsByWeek: { [week: string]: any[] } = {};
-
-	function getNFLWeek(date: Date = new Date()): number {
-		const kickoff = new Date(2025, 8, 4); // September 4, 2025
-
-		// If the date is before the season starts, return week 1
-		if (date < kickoff) {
-			return 1;
-		}
-
-		const daysSinceKickoff = Math.floor(
-			(date.getTime() - kickoff.getTime()) / (1000 * 60 * 60 * 24)
-		);
-		const weeksSinceKickoff = Math.floor(daysSinceKickoff / 7);
-
-		// Week 1 starts on kickoff day, so add 1 to make it 1-indexed
-		return weeksSinceKickoff + 1;
-	}
+	let matchupsByWeek: { [week: string]: any[] } = $state({});
 
 	async function loadMatchups() {
 		try {
@@ -289,6 +116,8 @@
 					nflWeek,
 					odds: matchup.bookmakers
 						.filter((bookmaker) => ['DraftKings', 'FanDuel', 'BetMGM'].includes(bookmaker.title))
+						// Prefer FanDuel as the displayed book (odds[0]); fall back to the rest.
+						.sort((a, b) => (b.title === 'FanDuel' ? 1 : 0) - (a.title === 'FanDuel' ? 1 : 0))
 						.map((bookmaker) => ({
 							name: bookmaker.title,
 							odds: bookmaker.markets.reduce((acc, market) => {
@@ -451,7 +280,7 @@
 
 	function getOddsDisplay(odds) {
 		if (odds && odds.h2h && odds.h2h.length >= 2) {
-			return `${odds.h2h[0].name}: ${odds.h2h[0].price} | ${odds.h2h[1].name}: ${odds.h2h[1].price}`;
+			return `${odds.h2h[0].name}: ${formatAmerican(odds.h2h[0].price)} | ${odds.h2h[1].name}: ${formatAmerican(odds.h2h[1].price)}`;
 		}
 		return 'N/A';
 	}
@@ -514,106 +343,90 @@
 	}
 </script>
 
-<main class="min-h-screen bg-gray-900 text-gray-100 p-4 sm:p-6">
+<main class="min-h-screen text-ink">
 	{#if isInitialLoading}
 		<div class="flex items-center justify-center min-h-screen" transition:fade>
 			<div class="text-center">
-				<div class="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-500 mx-auto mb-4"></div>
-				<h2 class="text-xl font-semibold text-gray-300">Loading Mandem Picks...</h2>
-				<p class="text-gray-400 mt-2">Please wait while we load your data</p>
+				<div class="animate-spin rounded-full h-12 w-12 border-2 border-white/20 border-t-white mx-auto mb-5"></div>
+				<h2 class="text-sm font-medium uppercase tracking-[0.3em] text-muted">Loading</h2>
 			</div>
 		</div>
 	{:else if showAuthForm}
-		<div class="flex items-center justify-center min-h-screen" transition:fade>
-			<div class="w-full max-w-md bg-gray-800 rounded-lg shadow-xl p-6 sm:p-8">
-				<h1 class="text-2xl font-bold mb-6 text-center">Welcome to Mandem Picks!</h1>
-				<div class="space-y-4">
-					<div class="relative">
-						<input
-							bind:value={name}
-							placeholder="First Name"
-							class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-						/>
-					</div>
-					<div class="relative">
-						<input
-							bind:value={favoriteColor}
-							placeholder="Favorite Color"
-							class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-						/>
-					</div>
-					<div class="relative">
-						<input
-							bind:value={favoriteAnimal}
-							placeholder="Favorite Animal"
-							class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-						/>
-					</div>
-					<div class="flex space-x-4">
-						<button
-							on:click={() => handleAuth(true)}
-							class="flex-1 bg-blue-600 text-white rounded-md px-4 py-2 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors"
-							disabled={isLoading}
-						>
-							{isLoading ? 'Loading...' : 'Sign Up'}
-						</button>
-						<button
-							on:click={() => handleAuth(false)}
-							class="flex-1 bg-green-600 text-white rounded-md px-4 py-2 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 transition-colors"
-							disabled={isLoading}
-						>
-							{isLoading ? 'Loading...' : 'Sign In'}
-						</button>
-					</div>
+		<section class="relative flex min-h-screen items-center justify-center overflow-hidden px-4">
+			<div class="pointer-events-none absolute inset-0">
+				<div class="absolute left-1/2 top-[-20%] h-[60vh] w-[60vh] -translate-x-1/2 rounded-full bg-white/[0.07] blur-[120px] animate-glow-pulse"></div>
+			</div>
+			<div class="relative z-10 w-full max-w-md text-center" in:fade={{ duration: 400 }}>
+				<p class="mb-4 text-xs font-medium uppercase tracking-[0.4em] text-muted" in:fly={{ y: 12, duration: 600, delay: 100 }}>
+					The group is watching
+				</p>
+				<h1
+					class="mb-4 text-6xl font-black uppercase leading-[0.9] tracking-tightest sm:text-7xl"
+					in:fly={{ y: 24, duration: 700, delay: 150 }}
+				>
+					Mandem<br />Picks
+				</h1>
+				<p class="mb-10 text-base text-muted" in:fly={{ y: 16, duration: 700, delay: 300 }}>
+					Pick the games. Settle the debate.
+				</p>
+
+				<div class="rounded-2xl border border-hairline bg-surface/70 p-6 backdrop-blur-xl shadow-card sm:p-8" in:fly={{ y: 24, duration: 700, delay: 400 }}>
+					<button
+						onclick={signInWithGoogle}
+						disabled={isLoading}
+						class="flex w-full items-center justify-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-medium text-black transition-all hover:-translate-y-0.5 hover:bg-white/90 active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 disabled:opacity-40 disabled:active:scale-100"
+					>
+						<svg viewBox="0 0 24 24" class="h-4 w-4" aria-hidden="true">
+							<path fill="#4285F4" d="M23.52 12.27c0-.79-.07-1.54-.2-2.27H12v4.51h6.47a5.53 5.53 0 0 1-2.4 3.63v3h3.88c2.27-2.09 3.57-5.17 3.57-8.87z" />
+							<path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3c-1.08.72-2.45 1.16-4.05 1.16-3.11 0-5.75-2.1-6.69-4.94H1.3v3.09A11.99 11.99 0 0 0 12 24z" />
+							<path fill="#FBBC05" d="M5.31 14.31A7.16 7.16 0 0 1 4.93 12c0-.8.14-1.58.38-2.31V6.6H1.3A11.99 11.99 0 0 0 0 12c0 1.94.46 3.77 1.3 5.4l4.01-3.09z" />
+							<path fill="#EA4335" d="M12 4.75c1.76 0 3.34.61 4.58 1.8l3.43-3.43C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.69 1.3 6.6l4.01 3.09C6.25 6.85 8.89 4.75 12 4.75z" />
+						</svg>
+						Continue with Google
+					</button>
+					<p class="mt-4 text-center text-xs text-muted">Sign in with your Google account to make your picks.</p>
 				</div>
 			</div>
-		</div>
+		</section>
 	{:else}
-		<div class="max-w-4xl mx-auto">
-			<div class="bg-gray-800 rounded-lg shadow-lg p-4 sm:p-6 mb-6">
-				<div class="flex flex-col sm:flex-row justify-between items-center mb-6">
-					<h1 class="text-2xl font-bold mb-4 sm:mb-0">Welcome, {user?.username}!</h1>
-					<div class="flex flex-wrap gap-2">
-						<a
-							href="/results"
-							class="bg-green-600 text-white rounded-md px-4 py-2 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 transition-colors"
-						>
-							Results Tracker
-						</a>
-						{#if user?.username === 'nico'}
-							<a
-								href="/admin"
-								class="bg-purple-600 text-white rounded-md px-4 py-2 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-50 transition-colors"
-							>
-								Admin
-							</a>
-						{/if}
-						<button
-							on:click={openShareOptionsModal}
-							class="bg-blue-600 text-white rounded-md px-4 py-2 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors"
-						>
-							Share Results
-						</button>
-						<button
-							on:click={signOut}
-							class="bg-red-600 text-white rounded-md px-4 py-2 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50 transition-colors"
-						>
-							Sign Out
-						</button>
+		<Nav subtitle="Welcome, {user?.username}">
+			<Button variant="ghost" size="sm" href="/results">Results</Button>
+			{#if user?.isAdmin}
+				<Button variant="ghost" size="sm" href="/admin">Admin</Button>
+			{/if}
+			<Button variant="ghost" size="sm" onclick={openShareOptionsModal}>Share</Button>
+			<Button variant="danger" size="sm" onclick={signOut}>Sign Out</Button>
+		</Nav>
+
+		<div class="mx-auto max-w-4xl px-4 pb-20 pt-6 sm:px-6">
+			<header class="mb-10">
+				<p class="text-xs font-medium uppercase tracking-[0.3em] text-muted">2025 Season</p>
+				<h1 class="mt-2 text-4xl font-black uppercase tracking-tightest sm:text-5xl">NFL Matchups</h1>
+			</header>
+
+			{#each Object.entries(matchupsByWeek) as [week, matchups]}
+				<div class="mb-14">
+					<div class="mb-6 flex items-center gap-4">
+						<h3 class="text-lg font-bold uppercase tracking-tight">{week}</h3>
+						<div class="h-px flex-grow bg-hairline"></div>
+						<span class="text-xs text-muted">{matchups.length} games</span>
 					</div>
-				</div>
-				<h2 class="text-xl font-semibold mb-4">NFL Matchups</h2>
-				{#each Object.entries(matchupsByWeek) as [week, matchups]}
-					<div class="mb-8">
-						<h3 class="text-lg font-semibold mb-4 bg-indigo-700 p-2 rounded-lg">{week}</h3>
+
+					<div class="space-y-5">
 						{#each matchups as matchup (matchup.id)}
-							<div class="bg-gray-700 rounded-lg p-4 mb-4">
-								<h4 class="text-lg font-semibold mb-2">
-									{matchup.home_team} vs {matchup.away_team}
-								</h4>
-								<p class="text-sm text-gray-400 mb-2">
-									Game Date: {new Date(matchup.commence_time).toLocaleString()}
-								</p>
+							{@const totalVotes = matchup.home_votes + matchup.away_votes + (matchup.skip_votes || 0)}
+							<Card padding="p-5 sm:p-6" animate hover>
+								<div class="mb-4 flex items-start justify-between gap-4">
+									<div>
+										<h4 class="text-xl font-bold tracking-tight">
+											{matchup.away_team} <span class="text-muted font-normal">@</span> {matchup.home_team}
+										</h4>
+										<p class="mt-1 text-xs uppercase tracking-wide text-muted">
+											{new Date(matchup.commence_time).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+										</p>
+									</div>
+								</div>
+
 								{#if matchup.odds && matchup.odds.length > 0 && matchup.odds[0].odds.h2h && matchup.odds[0].odds.h2h.length >= 2}
 									{@const firstBookmaker = matchup.odds[0]}
 									{@const homeOdds = firstBookmaker.odds.h2h.find(team => team.name === matchup.home_team)?.price || 'N/A'}
@@ -622,247 +435,140 @@
 									{@const favoriteOdds = favoriteTeam === matchup.home_team ? homeOdds : awayOdds}
 									{@const underdogTeam = favoriteTeam === matchup.home_team ? matchup.away_team : matchup.home_team}
 									{@const underdogOdds = favoriteTeam === matchup.home_team ? awayOdds : homeOdds}
-									
-									<div class="bg-blue-900 border border-blue-700 rounded-lg p-3 mb-4">
-										<div class="flex items-start space-x-2">
-											<svg class="h-4 w-4 text-blue-400 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-												<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
-											</svg>
-											<div class="text-xs text-blue-100">
-												<p class="font-medium mb-1">Understanding These Odds (Decimal Format):</p>
-												{#if homeOdds !== 'N/A' && awayOdds !== 'N/A'}
-													<p><strong>{favoriteTeam}: {favoriteOdds}</strong> (Favorite) - Win ${favoriteOdds} for every $1 bet</p>
-													<p><strong>{underdogTeam}: {underdogOdds}</strong> (Underdog) - Win ${underdogOdds} for every $1 bet</p>
-													<p class="mt-1 text-blue-200">Lower number = favorite | Higher number = underdog</p>
-													<p class="text-blue-300 text-xs mt-1">Example: $10 bet on {underdogTeam} ({underdogOdds}) = ${(parseFloat(underdogOdds) * 10).toFixed(2)} total return</p>
-												{:else}
-													<p>Odds information not available for this matchup</p>
-												{/if}
+
+									{#if homeOdds !== 'N/A' && awayOdds !== 'N/A'}
+										<div class="mb-4 grid grid-cols-2 gap-3">
+											<div class="rounded-xl border border-hairline bg-surface-2/60 p-3">
+												<p class="text-[10px] uppercase tracking-wider text-muted">Favorite</p>
+												<p class="mt-1 text-sm font-semibold">{favoriteTeam}</p>
+												<p class="text-2xl font-bold tracking-tight">
+													{formatAmerican(favoriteOdds)}
+													<span class="ml-1 text-xs font-medium text-muted">· {impliedProbability(favoriteOdds)}</span>
+												</p>
 											</div>
+											<div class="rounded-xl border border-hairline bg-surface-2/60 p-3">
+												<p class="text-[10px] uppercase tracking-wider text-muted">Underdog</p>
+												<p class="mt-1 text-sm font-semibold">{underdogTeam}</p>
+												<p class="text-2xl font-bold tracking-tight">
+													{formatAmerican(underdogOdds)}
+													<span class="ml-1 text-xs font-medium text-muted">· {impliedProbability(underdogOdds)}</span>
+												</p>
+											</div>
+										</div>
+										<details class="group mb-4">
+											<summary class="cursor-pointer list-none text-xs text-muted transition-colors hover:text-ink">
+												<span class="underline decoration-hairline underline-offset-4">How to read these odds</span>
+											</summary>
+											<div class="mt-2 space-y-1 rounded-xl border border-hairline bg-surface-2/40 p-3 text-xs text-muted">
+												<p>American odds. Minus (−) = the favorite: bet that much to win $100. Plus (+) = the underdog: win that much on a $100 bet.</p>
+												<p>Example: $100 on {underdogTeam} ({formatAmerican(underdogOdds)}) wins ${profitOnHundred(underdogOdds)}.</p>
+												<p class="pt-1 text-[11px]">Books: {matchup.odds.map((b) => `${b.name} (${getOddsDisplay(b.odds)})`).join(' · ')}</p>
+											</div>
+										</details>
+									{/if}
+								{/if}
+
+								<div class="grid grid-cols-3 gap-2">
+									<Button variant="vote" accent="win" active={userVotes[matchup.id] === 'away'} disabled={isLoading} fullWidth
+										onclick={() => submitVote(matchup.id, 'away', `${matchup.away_team} vs ${matchup.home_team}`)}>
+										{matchup.away_team.split(' ').slice(-1)[0]}
+									</Button>
+									<Button variant="vote" accent="win" active={userVotes[matchup.id] === 'home'} disabled={isLoading} fullWidth
+										onclick={() => submitVote(matchup.id, 'home', `${matchup.away_team} vs ${matchup.home_team}`)}>
+										{matchup.home_team.split(' ').slice(-1)[0]}
+									</Button>
+									<Button variant="vote" accent="skip" active={userVotes[matchup.id] === 'skip'} disabled={isLoading} fullWidth
+										onclick={() => submitVote(matchup.id, 'skip', `${matchup.away_team} vs ${matchup.home_team}`)}>
+										Skip
+									</Button>
+								</div>
+
+								{#if totalVotes > 0}
+									<div class="mt-4">
+										<div class="flex h-1.5 overflow-hidden rounded-full bg-surface-2">
+											<div class="bg-win" style="width: {(matchup.away_votes / totalVotes) * 100}%"></div>
+											<div class="bg-ink" style="width: {(matchup.home_votes / totalVotes) * 100}%"></div>
+											<div class="bg-skip" style="width: {((matchup.skip_votes || 0) / totalVotes) * 100}%"></div>
+										</div>
+										<div class="mt-2 flex justify-between text-xs text-muted">
+											<span>{matchup.away_team.split(' ').slice(-1)[0]} {matchup.away_votes}</span>
+											<span>{matchup.home_team.split(' ').slice(-1)[0]} {matchup.home_votes}</span>
+											<span>Skip {matchup.skip_votes || 0}</span>
 										</div>
 									</div>
 								{/if}
-								<div class="overflow-x-auto">
-									<table class="w-full text-sm text-left text-gray-300">
-										<thead class="text-xs uppercase bg-gray-600 text-gray-300">
-											<tr>
-												<th scope="col" class="px-4 py-3">Bookmaker</th>
-												<th scope="col" class="px-4 py-3">Odds</th>
-											</tr>
-										</thead>
-										<tbody>
-											{#each matchup.odds as bookmaker}
-												<tr class="border-b border-gray-600">
-													<th scope="row" class="px-4 py-3 font-medium whitespace-nowrap">
-														{bookmaker.name}
-													</th>
-													<td class="px-4 py-3">
-														{getOddsDisplay(bookmaker.odds)}
-													</td>
-												</tr>
-											{/each}
-										</tbody>
-									</table>
-								</div>
-
-								<div class="flex flex-col sm:flex-row justify-between items-center mt-4">
-									<div
-										class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 mb-4 sm:mb-0"
-									>
-										<button
-											on:click={() =>
-												submitVote(
-													matchup.id,
-													'away',
-													`${matchup.away_team} vs ${matchup.home_team}`
-												)}
-											class="w-full sm:w-auto text-white rounded-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-colors"
-											class:bg-gray-500={userVotes[matchup.id] !== 'away'}
-											class:hover:bg-gray-600={userVotes[matchup.id] !== 'away'}
-											class:focus:ring-gray-400={userVotes[matchup.id] !== 'away'}
-											class:bg-green-600={userVotes[matchup.id] === 'away'}
-											class:hover:bg-green-700={userVotes[matchup.id] === 'away'}
-											class:focus:ring-green-500={userVotes[matchup.id] === 'away'}
-											disabled={isLoading}
-										>
-											Away {matchup.away_team}
-										</button>
-										<button
-											on:click={() =>
-												submitVote(
-													matchup.id,
-													'home',
-													`${matchup.away_team} vs ${matchup.home_team}`
-												)}
-											class="w-full sm:w-auto text-white rounded-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-colors"
-											class:bg-gray-500={userVotes[matchup.id] !== 'home'}
-											class:hover:bg-gray-600={userVotes[matchup.id] !== 'home'}
-											class:focus:ring-gray-400={userVotes[matchup.id] !== 'home'}
-											class:bg-green-600={userVotes[matchup.id] === 'home'}
-											class:hover:bg-green-700={userVotes[matchup.id] === 'home'}
-											class:focus:ring-green-500={userVotes[matchup.id] === 'home'}
-											disabled={isLoading}
-										>
-											Home {matchup.home_team}
-										</button>
-										<button
-											on:click={() =>
-												submitVote(
-													matchup.id,
-													'skip',
-													`${matchup.away_team} vs ${matchup.home_team}`
-												)}
-											class="w-full sm:w-auto text-white rounded-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-colors"
-											class:bg-gray-500={userVotes[matchup.id] !== 'skip'}
-											class:hover:bg-gray-600={userVotes[matchup.id] !== 'skip'}
-											class:focus:ring-gray-400={userVotes[matchup.id] !== 'skip'}
-											class:bg-yellow-600={userVotes[matchup.id] === 'skip'}
-											class:hover:bg-yellow-700={userVotes[matchup.id] === 'skip'}
-											class:focus:ring-yellow-500={userVotes[matchup.id] === 'skip'}
-											disabled={isLoading}
-										>
-											Skip
-										</button>
-									</div>
-									<div class="text-center sm:text-right">
-										<p class="text-sm font-semibold">
-											{matchup.home_team}: {matchup.home_votes}
-										</p>
-										<p class="text-sm font-semibold">
-											{matchup.away_team}: {matchup.away_votes}
-										</p>
-										<p class="text-sm font-semibold">
-											Skipped: {matchup.skip_votes || 0}
-										</p>
-									</div>
-								</div>
-							</div>
+							</Card>
 						{/each}
 					</div>
-				{/each}
-			</div>
+				</div>
+			{/each}
 		</div>
 	{/if}
 
 	{#if showModal}
-		<div
-			class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-10 md:px-0"
-		>
-			<div class="bg-gray-800 p-6 rounded-lg shadow-xl max-w-md w-full">
-				<h2 class="text-xl font-bold mb-4">Message</h2>
-				<p class="mb-6">{modalMessage}</p>
+		<Modal title="Message" onclose={() => (showModal = false)}>
+			<p class="text-muted">{modalMessage}</p>
+			{#snippet footer()}
+				<Button variant="primary" fullWidth onclick={() => (showModal = false)}>Close</Button>
+			{/snippet}
+		</Modal>
+	{/if}
+
+	{#if showShareOptionsModal}
+		<Modal title="Share Results" onclose={closeShareOptionsModal}>
+			<p class="mb-5 text-sm text-muted">Choose which week's picks you want to share.</p>
+			<div class="space-y-3">
 				<button
-					on:click={() => (showModal = false)}
-					class="w-full bg-blue-600 text-white rounded-md px-4 py-2 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors"
+					onclick={() => openShareModal('current')}
+					class="w-full rounded-xl border border-hairline bg-surface-2/60 p-4 text-left transition-all hover:border-white/30 hover:bg-white/[0.06]"
 				>
-					Close
+					<div class="font-semibold">Current Week</div>
+					<div class="text-sm text-muted">Share this week's most voted picks</div>
+				</button>
+				<button
+					onclick={() => openShareModal('next')}
+					class="w-full rounded-xl border border-hairline bg-surface-2/60 p-4 text-left transition-all hover:border-white/30 hover:bg-white/[0.06]"
+				>
+					<div class="font-semibold">Next Week</div>
+					<div class="text-sm text-muted">Share next week's most voted picks</div>
 				</button>
 			</div>
-		</div>
-	{/if}
-	{#if showShareOptionsModal}
-		<div
-			class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-			on:click={closeShareOptionsModal}
-		>
-			<div
-				class="bg-gray-800 rounded-lg shadow-xl w-full max-w-md p-6"
-				on:click|stopPropagation
-			>
-				<div class="mb-6">
-					<h2 class="text-xl font-bold mb-2">Share Results</h2>
-					<p class="text-gray-400 text-sm">Choose which week's picks you want to share</p>
-				</div>
-				
-				<div class="space-y-3">
-					<button
-						on:click={() => openShareModal('current')}
-						class="w-full bg-blue-600 text-white rounded-md px-4 py-3 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors text-left"
-					>
-						<div class="font-medium">Current Week</div>
-						<div class="text-sm text-blue-200">Share this week's most voted picks</div>
-					</button>
-					
-					<button
-						on:click={() => openShareModal('next')}
-						class="w-full bg-green-600 text-white rounded-md px-4 py-3 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 transition-colors text-left"
-					>
-						<div class="font-medium">Next Week</div>
-						<div class="text-sm text-green-200">Share next week's most voted picks</div>
-					</button>
-				</div>
-				
-				<div class="mt-6">
-					<button
-						on:click={closeShareOptionsModal}
-						class="w-full bg-gray-600 text-white rounded-md px-4 py-2 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-50 transition-colors"
-					>
-						Cancel
-					</button>
-				</div>
-			</div>
-		</div>
+			{#snippet footer()}
+				<Button variant="ghost" fullWidth onclick={closeShareOptionsModal}>Cancel</Button>
+			{/snippet}
+		</Modal>
 	{/if}
 
 	{#if showShareModal}
-		<div
-			class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2"
-			on:click={closeShareModal}
-		>
-			<div
-				class="bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl max-h-[95vh] overflow-hidden flex flex-col"
-				on:click|stopPropagation
-			>
-				<div class="p-4 overflow-y-auto flex-grow">
-					<h2 class="text-xl font-bold mb-4">Most Voted Teams</h2>
-					<div class="space-y-4">
-						{#each Object.entries(matchupsByWeek) as [week, matchups]}
-							<div>
-								<h3 class="text-sm font-semibold mb-2 text-gray-400">{week}</h3>
-								<div class="grid grid-cols-2 gap-2">
-									{#each matchups as matchup (matchup.id)}
-										{@const mostVoted = getMostVotedOption(matchup)}
-										<div
-											class="bg-gray-700 flex flex-col items-center justify-center rounded-lg p-2 gap-1"
-										>
-											<h4 class="font-semibold text-center text-sm">
-												{matchup.away_team.split(' ').slice(-1)[0]} @ {matchup.home_team
-													.split(' ')
-													.slice(-1)[0]}
-											</h4>
-											<div
-												class="flex items-center justify-center py-1 px-2 rounded-md text-center font-medium w-full text-sm"
-												class:bg-green-600={mostVoted.option !== 'skip'}
-												class:bg-yellow-600={mostVoted.option === 'skip'}
-											>
-												{#if mostVoted.option === 'skip'}
-													Skip
-												{:else}
-													{mostVoted.team.split(' ').slice(-1)[0]}
-												{/if}
-											</div>
-										</div>
-									{/each}
+		<Modal title="Most Voted Teams" size="lg" onclose={closeShareModal}>
+			<div class="space-y-5">
+				{#each Object.entries(matchupsByWeek) as [week, matchups]}
+					<div>
+						<h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">{week}</h3>
+						<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+							{#each matchups as matchup (matchup.id)}
+								{@const mostVoted = getMostVotedOption(matchup)}
+								<div class="flex flex-col items-center gap-2 rounded-xl border border-hairline bg-surface-2/60 p-3">
+									<h4 class="text-center text-xs font-medium text-muted">
+										{matchup.away_team.split(' ').slice(-1)[0]} @ {matchup.home_team.split(' ').slice(-1)[0]}
+									</h4>
+									<div
+										class="w-full rounded-lg py-1.5 text-center text-sm font-semibold"
+										class:bg-win={mostVoted.option !== 'skip'}
+										class:text-black={mostVoted.option !== 'skip'}
+										class:bg-skip={mostVoted.option === 'skip'}
+									>
+										{#if mostVoted.option === 'skip'}Skip{:else}{mostVoted.team.split(' ').slice(-1)[0]}{/if}
+									</div>
 								</div>
-							</div>
-						{/each}
+							{/each}
+						</div>
 					</div>
-				</div>
-				<div class="p-2 border-t border-gray-700">
-					<button
-						on:click={closeShareModal}
-						class="w-full bg-blue-600 text-white rounded-md px-4 py-2 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors text-sm"
-					>
-						Close
-					</button>
-				</div>
+				{/each}
 			</div>
-		</div>
+			{#snippet footer()}
+				<Button variant="primary" fullWidth onclick={closeShareModal}>Close</Button>
+			{/snippet}
+		</Modal>
 	{/if}
 </main>
-
-<style>
-	:global(body) {
-		@apply bg-gray-900 text-gray-100;
-	}
-</style>

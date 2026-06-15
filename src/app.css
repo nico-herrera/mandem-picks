@@ -2,6 +2,63 @@
 @tailwind components;
 @tailwind utilities;
 
-html {
-	@apply bg-gray-900;
+@layer base {
+	html {
+		@apply bg-canvas;
+		scroll-behavior: smooth;
+		-webkit-font-smoothing: antialiased;
+		-moz-osx-font-smoothing: grayscale;
+	}
+
+	body {
+		@apply bg-canvas text-ink font-sans;
+		background-image: radial-gradient(
+			120% 80% at 50% -10%,
+			rgba(255, 255, 255, 0.06),
+			transparent 60%
+		);
+		background-attachment: fixed;
+	}
+
+	::selection {
+		background: rgba(255, 255, 255, 0.18);
+		color: #fff;
+	}
+
+	::-webkit-scrollbar {
+		width: 10px;
+		height: 10px;
+	}
+
+	::-webkit-scrollbar-track {
+		background: transparent;
+	}
+
+	::-webkit-scrollbar-thumb {
+		background: #2a2a2e;
+		border-radius: 9999px;
+		border: 2px solid transparent;
+		background-clip: padding-box;
+	}
+
+	::-webkit-scrollbar-thumb:hover {
+		background: #3a3a40;
+		background-clip: padding-box;
+	}
+}
+
+@layer components {
+	.input-field {
+		@apply w-full rounded-xl bg-surface-2 border border-hairline px-4 py-3 text-ink placeholder-muted
+			transition-colors focus:outline-none focus:border-white/40 focus:ring-1 focus:ring-white/20;
+	}
+
+	.reveal-init {
+		opacity: 0;
+		transform: translateY(24px);
+	}
+
+	.reveal-in {
+		@apply animate-fade-up;
+	}
 }

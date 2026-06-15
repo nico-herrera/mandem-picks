@@ -3,15 +3,20 @@
 	import { supabase } from '$lib/supabaseClient';
 	import { getAllUserResults, getGameResults } from '$lib/api';
 	import { fade } from 'svelte/transition';
+	import Button from '$lib/components/Button.svelte';
+	import Card from '$lib/components/Card.svelte';
+	import Modal from '$lib/components/Modal.svelte';
+	import Nav from '$lib/components/Nav.svelte';
+	import { getCurrentUser, type AppUser } from '$lib/auth';
 
-	let user: any = null;
-	let userResults: any[] = [];
-	let isLoading: boolean = false;
-	let isInitialLoading: boolean = true;
-	let allUserResults: { [username: string]: any[] } = {};
-	let gameResults: any[] = [];
-	let showModal: boolean = false;
-	let modalMessage: string = '';
+	let user: AppUser | null = $state(null);
+	let userResults: any[] = $state([]);
+	let isLoading: boolean = $state(false);
+	let isInitialLoading: boolean = $state(true);
+	let allUserResults: { [username: string]: any[] } = $state({});
+	let gameResults: any[] = $state([]);
+	let showModal: boolean = $state(false);
+	let modalMessage: string = $state('');
 
 	function showModalMessage(message: string) {
 		modalMessage = message;
@@ -20,9 +25,8 @@
 
 	onMount(async () => {
 		try {
-			const storedUser = localStorage.getItem('user');
-			if (storedUser) {
-				user = JSON.parse(storedUser);
+			user = await getCurrentUser();
+			if (user) {
 				await loadResults();
 			} else {
 				showModalMessage('Please sign in to view results.');
@@ -78,7 +82,7 @@
 			const groupedResults = {};
 			
 			allVotes.forEach(vote => {
-				const username = vote.users?.username;
+				const username = vote.profiles?.username;
 				if (!groupedResults[username]) {
 					groupedResults[username] = [];
 				}
@@ -150,218 +154,153 @@
 		return vote;
 	}
 
-	function signOut() {
+	async function signOut() {
+		await supabase.auth.signOut();
 		user = null;
 		userResults = [];
 		allUserResults = {};
-		localStorage.removeItem('user');
 		window.location.href = '/';
 	}
 </script>
 
-<main class="min-h-screen bg-gray-900 text-gray-100 p-4 sm:p-6">
+<main class="min-h-screen text-ink">
 	{#if isInitialLoading}
 		<div class="flex items-center justify-center min-h-screen" transition:fade>
 			<div class="text-center">
-				<div class="animate-spin rounded-full h-16 w-16 border-b-4 border-green-500 mx-auto mb-4"></div>
-				<h2 class="text-xl font-semibold text-gray-300">Loading Results...</h2>
-				<p class="text-gray-400 mt-2">Please wait while we load your data</p>
+				<div class="animate-spin rounded-full h-12 w-12 border-2 border-white/20 border-t-white mx-auto mb-5"></div>
+				<h2 class="text-sm font-medium uppercase tracking-[0.3em] text-muted">Loading Results</h2>
 			</div>
 		</div>
 	{:else if !user}
-		<div class="flex items-center justify-center min-h-screen" transition:fade>
-			<div class="w-full max-w-md bg-gray-800 rounded-lg shadow-xl p-6 sm:p-8 text-center">
-				<h1 class="text-2xl font-bold mb-6">Results Tracker</h1>
-				<p class="mb-6 text-gray-300">Please sign in to view pick results.</p>
-				<a
-					href="/"
-					class="bg-blue-600 text-white rounded-md px-4 py-2 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors inline-block"
-				>
-					Go to Home
-				</a>
-			</div>
+		<div class="flex items-center justify-center min-h-screen px-4" transition:fade>
+			<Card class="w-full max-w-md text-center">
+				<h1 class="mb-4 text-3xl font-black uppercase tracking-tightest">Results</h1>
+				<p class="mb-6 text-muted">Please sign in to view pick results.</p>
+				<Button variant="primary" href="/">Go to Home</Button>
+			</Card>
 		</div>
 	{:else}
-		<div class="max-w-6xl mx-auto">
-			<div class="bg-gray-800 rounded-lg shadow-lg p-4 sm:p-6 mb-6">
-				<div class="flex flex-col sm:flex-row justify-between items-center mb-6">
-					<h1 class="text-2xl font-bold mb-4 sm:mb-0">Results Tracker</h1>
-					<div class="flex space-x-2">
-						<a
-							href="/"
-							class="bg-gray-600 text-white rounded-md px-4 py-2 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-50 transition-colors"
-						>
-							Back to Picks
-						</a>
-						<button
-							on:click={signOut}
-							class="bg-red-600 text-white rounded-md px-4 py-2 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50 transition-colors"
-						>
-							Sign Out
-						</button>
-					</div>
-				</div>
+		<Nav title="RESULTS" subtitle="Standings & history">
+			<Button variant="ghost" size="sm" href="/">Picks</Button>
+			<Button variant="danger" size="sm" onclick={signOut}>Sign Out</Button>
+		</Nav>
 
-				{#if isLoading}
-					<div class="text-center py-8">
-						<div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-						<p class="mt-4 text-gray-300">Loading results...</p>
-					</div>
-				{:else}
-					<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-						<!-- Your Results -->
-						<div class="bg-gray-700 rounded-lg p-6">
-							<h2 class="text-xl font-semibold mb-4">Your Results ({user.username})</h2>
-							{#if userResults}
-								{@const stats = calculateUserStats(userResults)}
-								<div class="bg-gray-600 rounded-lg p-4 mb-4">
-								<div class="grid grid-cols-2 md:grid-cols-5 gap-4 text-center">
-									<div>
-										<div class="text-2xl font-bold text-blue-400">{stats.totalPicks}</div>
-										<div class="text-sm text-gray-300">Total Picks</div>
-									</div>
-									<div>
-										<div class="text-2xl font-bold text-green-400">{stats.wins}</div>
-										<div class="text-sm text-gray-300">Wins</div>
-									</div>
-									<div>
-										<div class="text-2xl font-bold text-red-400">{stats.losses}</div>
-										<div class="text-sm text-gray-300">Losses</div>
-									</div>
-									<div>
-										<div class="text-2xl font-bold text-gray-400">{stats.pending}</div>
-										<div class="text-sm text-gray-300">Pending</div>
-									</div>
-									<div>
-										<div class="text-2xl font-bold text-yellow-400">{stats.winPercentage}%</div>
-										<div class="text-sm text-gray-300">Win Rate</div>
-									</div>
+		<div class="mx-auto max-w-6xl px-4 pb-20 pt-6 sm:px-6">
+			{#if isLoading}
+				<div class="py-16 text-center">
+					<div class="animate-spin rounded-full h-10 w-10 border-2 border-white/20 border-t-white mx-auto"></div>
+					<p class="mt-4 text-sm text-muted">Loading results...</p>
+				</div>
+			{:else}
+				<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+					<!-- Your Results -->
+					<Card animate>
+						<h2 class="mb-5 text-xl font-bold tracking-tight">Your Results <span class="text-muted font-normal">— {user.username}</span></h2>
+						{#if userResults}
+							{@const stats = calculateUserStats(userResults)}
+							<div class="mb-6 grid grid-cols-3 gap-3 sm:grid-cols-5">
+								<div class="rounded-xl border border-hairline bg-surface-2/50 p-3 text-center">
+									<div class="text-2xl font-bold tracking-tight">{stats.totalPicks}</div>
+									<div class="mt-0.5 text-[10px] uppercase tracking-wider text-muted">Picks</div>
+								</div>
+								<div class="rounded-xl border border-hairline bg-surface-2/50 p-3 text-center">
+									<div class="text-2xl font-bold tracking-tight text-win">{stats.wins}</div>
+									<div class="mt-0.5 text-[10px] uppercase tracking-wider text-muted">Wins</div>
+								</div>
+								<div class="rounded-xl border border-hairline bg-surface-2/50 p-3 text-center">
+									<div class="text-2xl font-bold tracking-tight text-loss">{stats.losses}</div>
+									<div class="mt-0.5 text-[10px] uppercase tracking-wider text-muted">Losses</div>
+								</div>
+								<div class="rounded-xl border border-hairline bg-surface-2/50 p-3 text-center">
+									<div class="text-2xl font-bold tracking-tight text-muted">{stats.pending}</div>
+									<div class="mt-0.5 text-[10px] uppercase tracking-wider text-muted">Pending</div>
+								</div>
+								<div class="col-span-3 rounded-xl border border-white/20 bg-white/[0.06] p-3 text-center sm:col-span-1">
+									<div class="text-2xl font-bold tracking-tight">{stats.winPercentage}%</div>
+									<div class="mt-0.5 text-[10px] uppercase tracking-wider text-muted">Win Rate</div>
 								</div>
 							</div>
 
-								<div class="space-y-2 max-h-96 overflow-y-auto">
-									{#if userResults.length === 0}
-										<p class="text-gray-400 text-center py-4">No picks made yet.</p>
-									{:else}
-										{#each userResults as vote}
-											{@const pickResult = getPickResult(vote)}
-											<div class="bg-gray-600 rounded-lg p-3 flex justify-between items-center">
-												<div class="flex-grow">
-													<div class="font-medium">{vote.matchup}</div>
-													<div class="text-sm text-gray-300">
-														Pick: {getVoteDisplayName(vote.vote, vote.matchup)}
+							<div class="max-h-96 space-y-2 overflow-y-auto pr-1">
+								{#if userResults.length === 0}
+									<p class="py-6 text-center text-muted">No picks made yet.</p>
+								{:else}
+									{#each userResults as vote}
+										{@const pickResult = getPickResult(vote)}
+										<div class="flex items-center justify-between gap-4 rounded-xl border border-hairline bg-surface-2/40 p-3">
+											<div class="min-w-0 flex-grow">
+												<div class="truncate font-medium">{vote.matchup}</div>
+												<div class="text-sm text-muted">Pick: {getVoteDisplayName(vote.vote, vote.matchup)}</div>
+												{#if pickResult.gameResult}
+													<div class="mt-0.5 text-xs text-muted/70">
+														Final: {pickResult.gameResult.home_team} {pickResult.gameResult.home_score} - {pickResult.gameResult.away_score} {pickResult.gameResult.away_team}
 													</div>
-													{#if pickResult.gameResult}
-														<div class="text-xs text-gray-400 mt-1">
-															Final: {pickResult.gameResult.home_team} {pickResult.gameResult.home_score} - {pickResult.gameResult.away_score} {pickResult.gameResult.away_team}
-														</div>
-													{/if}
-												</div>
-												<div class="text-right ml-4">
-													{#if pickResult.result === 'win'}
-														<div class="text-sm font-bold text-green-400">✓ WIN</div>
-													{:else if pickResult.result === 'loss'}
-														<div class="text-sm font-bold text-red-400">✗ LOSS</div>
-													{:else if pickResult.result === 'skip'}
-														<div class="text-sm text-yellow-400">SKIPPED</div>
-													{:else}
-														<div class="text-sm text-gray-400">PENDING</div>
-													{/if}
-													{#if pickResult.gameResult}
-														<div class="text-xs text-gray-500">
-															Winner: {pickResult.gameResult.winner}
-														</div>
-													{:else if pickResult.result === 'pending'}
-														<div class="text-xs text-gray-500">Game not finished</div>
-													{/if}
-												</div>
+												{/if}
 											</div>
-										{/each}
-									{/if}
-								</div>
-							{/if}
-						</div>
-
-						<!-- All Users Leaderboard -->
-						<div class="bg-gray-700 rounded-lg p-6">
-							<h2 class="text-xl font-semibold mb-4">Leaderboard</h2>
-							<div class="space-y-3">
-								{#each Object.entries(allUserResults)
-									.map(([username, votes]) => ({
-										username,
-										votes,
-										stats: calculateUserStats(votes)
-									}))
-									.sort((a, b) => {
-										// Sort by win percentage (descending), then by total wins (descending)
-										const winPercentageDiff = parseFloat(b.stats.winPercentage) - parseFloat(a.stats.winPercentage);
-										if (winPercentageDiff !== 0) return winPercentageDiff;
-										return b.stats.wins - a.stats.wins;
-									}) as user, index}
-									<div class="bg-gray-600 rounded-lg p-4">
-										<div class="flex justify-between items-center mb-2">
-											<div class="flex items-center space-x-3">
-												<div class="text-lg font-bold text-gray-300">#{index + 1}</div>
-												<div>
-													<div class="font-medium">{user.username}</div>
-													<div class="text-sm text-gray-300">{user.stats.totalPicks} picks made</div>
-												</div>
-											</div>
-											<div class="text-right">
-												<div class="text-lg font-bold text-yellow-400">{user.stats.winPercentage}%</div>
-												<div class="text-sm text-gray-300">{user.stats.wins}W-{user.stats.losses}L</div>
+											<div class="flex-shrink-0 text-right">
+												{#if pickResult.result === 'win'}
+													<div class="text-sm font-bold text-win">WIN</div>
+												{:else if pickResult.result === 'loss'}
+													<div class="text-sm font-bold text-loss">LOSS</div>
+												{:else if pickResult.result === 'skip'}
+													<div class="text-sm font-semibold text-skip">SKIP</div>
+												{:else}
+													<div class="text-sm text-muted">PENDING</div>
+												{/if}
 											</div>
 										</div>
-										{#if user.stats.pending > 0}
-											<div class="text-xs text-gray-400">
-												{user.stats.pending} games pending
-											</div>
-										{/if}
-									</div>
-								{/each}
+									{/each}
+								{/if}
 							</div>
-						</div>
-					</div>
+						{/if}
+					</Card>
 
-					<!-- Information about game results -->
-					<div class="mt-6 bg-blue-900 border border-blue-700 rounded-lg p-4">
-						<div class="flex">
-							<div class="flex-shrink-0">
-								<svg class="h-5 w-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
-									<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
-								</svg>
-							</div>
-							<div class="ml-3">
-								<h3 class="text-sm font-medium text-blue-200">Results Tracking Active</h3>
-								<div class="mt-2 text-sm text-blue-100">
-									<p>Results are calculated when game outcomes are available. Games without results will show as "PENDING" until scores are entered into the system.</p>
+					<!-- All Users Leaderboard -->
+					<Card animate delay={80}>
+						<h2 class="mb-5 text-xl font-bold tracking-tight">Leaderboard</h2>
+						<div class="space-y-2">
+							{#each Object.entries(allUserResults)
+								.map(([username, votes]) => ({
+									username,
+									votes,
+									stats: calculateUserStats(votes)
+								}))
+								.sort((a, b) => {
+									const winPercentageDiff = parseFloat(b.stats.winPercentage) - parseFloat(a.stats.winPercentage);
+									if (winPercentageDiff !== 0) return winPercentageDiff;
+									return b.stats.wins - a.stats.wins;
+								}) as user, index}
+								<div class="flex items-center justify-between gap-4 rounded-xl border border-hairline bg-surface-2/40 p-4 {index === 0 ? 'border-white/25 bg-white/[0.05]' : ''}">
+									<div class="flex items-center gap-4">
+										<div class="w-7 text-center text-lg font-bold {index === 0 ? 'text-ink' : 'text-muted'}">{index + 1}</div>
+										<div>
+											<div class="font-semibold">{user.username}</div>
+											<div class="text-xs text-muted">{user.stats.totalPicks} picks{user.stats.pending > 0 ? ` · ${user.stats.pending} pending` : ''}</div>
+										</div>
+									</div>
+									<div class="text-right">
+										<div class="text-lg font-bold tracking-tight">{user.stats.winPercentage}%</div>
+										<div class="text-xs text-muted">{user.stats.wins}W–{user.stats.losses}L</div>
+									</div>
 								</div>
-							</div>
+							{/each}
 						</div>
-					</div>
-				{/if}
-			</div>
+					</Card>
+				</div>
+
+				<p class="mt-6 text-center text-xs text-muted">
+					Results update when game outcomes are entered. Undecided games show as PENDING.
+				</p>
+			{/if}
 		</div>
 	{/if}
 
 	{#if showModal}
-		<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-10 md:px-0">
-			<div class="bg-gray-800 p-6 rounded-lg shadow-xl max-w-md w-full">
-				<h2 class="text-xl font-bold mb-4">Message</h2>
-				<p class="mb-6">{modalMessage}</p>
-				<button
-					on:click={() => (showModal = false)}
-					class="w-full bg-blue-600 text-white rounded-md px-4 py-2 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors"
-				>
-					Close
-				</button>
-			</div>
-		</div>
+		<Modal title="Message" onclose={() => (showModal = false)}>
+			<p class="text-muted">{modalMessage}</p>
+			{#snippet footer()}
+				<Button variant="primary" fullWidth onclick={() => (showModal = false)}>Close</Button>
+			{/snippet}
+		</Modal>
 	{/if}
 </main>
-
-<style>
-	:global(body) {
-		@apply bg-gray-900 text-gray-100;
-	}
-</style>

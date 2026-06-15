@@ -1,11 +1,13 @@
 import { supabase } from '$lib/supabaseClient';
-import { PUBLIC_ODDS_API_KEY } from '$env/static/public';
+import { NEXT_PUBLIC_ODDS_API_KEY } from '$env/static/public';
 
-const apiKey = PUBLIC_ODDS_API_KEY; // Replace with your The-Odds-API key
+const apiKey = NEXT_PUBLIC_ODDS_API_KEY; // Replace with your The-Odds-API key
 const apiUrl = 'https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds/';
 
 export async function getNFLMatchups() {
-	const response = await fetch(`${apiUrl}?apiKey=${apiKey}&regions=us&markets=h2h`);
+	const response = await fetch(
+		`${apiUrl}?apiKey=${apiKey}&regions=us&markets=h2h&oddsFormat=american`
+	);
 	if (!response.ok) {
 		throw new Error('Failed to fetch NFL matchups');
 	}
@@ -63,8 +65,7 @@ export async function getUserResults(userId: string) {
 export async function getAllUserResults() {
 	const { data, error } = await supabase.from('votes').select(`
 			*,
-			users!inner(username),
-			game_results(*)
+			profiles!inner(username)
 		`);
 
 	if (error) {

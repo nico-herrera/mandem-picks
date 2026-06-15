@@ -1,55 +1,43 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { supabase } from '$lib/supabaseClient';
+	import { getGameResults } from '$lib/api';
+	import { getCurrentUser, type AppUser } from '$lib/auth';
+	import { getNFLWeek } from '$lib/nfl';
 	import { fade } from 'svelte/transition';
+	import Button from '$lib/components/Button.svelte';
+	import Card from '$lib/components/Card.svelte';
+	import Modal from '$lib/components/Modal.svelte';
+	import Nav from '$lib/components/Nav.svelte';
 
-	let user: any = null;
-	let matchups: any[] = [];
-	let gameResults: any[] = [];
-	let isLoading: boolean = false;
-	let isInitialLoading: boolean = true;
-	let showModal: boolean = false;
-	let modalMessage: string = '';
-	
-	let selectedMatchup: any = null;
-	let homeScore: number | null = null;
-	let awayScore: number | null = null;
+	let user: AppUser | null = $state(null);
+	let matchups: any[] = $state([]);
+	let gameResults: any[] = $state([]);
+	let isLoading: boolean = $state(false);
+	let isInitialLoading: boolean = $state(true);
+	let showModal: boolean = $state(false);
+	let modalMessage: string = $state('');
+
+	let selectedMatchup: any = $state(null);
+	let homeScore: number | null = $state(null);
+	let awayScore: number | null = $state(null);
 
 	function showModalMessage(message: string) {
 		modalMessage = message;
 		showModal = true;
 	}
 
-	function getNFLWeek(date: Date = new Date()): number {
-		const kickoff = new Date(2025, 8, 4); // September 4, 2025
-
-		// If the date is before the season starts, return week 1
-		if (date < kickoff) {
-			return 1;
-		}
-
-		const daysSinceKickoff = Math.floor(
-			(date.getTime() - kickoff.getTime()) / (1000 * 60 * 60 * 24)
-		);
-		const weeksSinceKickoff = Math.floor(daysSinceKickoff / 7);
-
-		// Week 1 starts on kickoff day, so add 1 to make it 1-indexed
-		return weeksSinceKickoff + 1;
-	}
-
 	onMount(async () => {
 		try {
-			const storedUser = localStorage.getItem('user');
-			if (storedUser) {
-				user = JSON.parse(storedUser);
-				
+			user = await getCurrentUser();
+			if (user) {
 				// Check if user is authorized for admin access
-				if (user.username !== 'nico') {
+				if (!user.isAdmin) {
 					showModalMessage('Access denied. Admin panel is restricted to authorized users only.');
 					user = null;
 					return;
 				}
-				
+
 				await loadData();
 			} else {
 				showModalMessage('Please sign in to access admin panel.');
@@ -104,12 +92,7 @@
 
 	async function loadGameResults() {
 		try {
-			const response = await fetch('/api/game-results');
-			if (!response.ok) {
-				throw new Error(`HTTP error! status: ${response.status}`);
-			}
-			const data = await response.json();
-			gameResults = data || [];
+			gameResults = await getGameResults();
 		} catch (error) {
 			console.error('Error loading game results:', error);
 			gameResults = [];
@@ -131,25 +114,17 @@
 
 		isLoading = true;
 		try {
-			const response = await fetch('/api/game-results', {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({
-					matchup_id: selectedMatchup.id,
-					home_team: selectedMatchup.home_team,
-					away_team: selectedMatchup.away_team,
-					home_score: homeScore,
-					away_score: awayScore,
-					winner: winner,
-					game_date: selectedMatchup.commence_time
-				})
+			const { error } = await supabase.from('game_results').upsert({
+				matchup_id: selectedMatchup.id,
+				home_team: selectedMatchup.home_team,
+				away_team: selectedMatchup.away_team,
+				home_score: homeScore,
+				away_score: awayScore,
+				winner: winner,
+				game_date: selectedMatchup.commence_time
 			});
 
-			if (!response.ok) {
-				throw new Error(`HTTP error! status: ${response.status}`);
-			}
+			if (error) throw error;
 
 			showModalMessage('Game result saved successfully!');
 			
@@ -174,207 +149,136 @@
 		return gameResults.find(result => result.matchup_id === matchupId);
 	}
 
-	function signOut() {
+	async function signOut() {
+		await supabase.auth.signOut();
 		user = null;
 		matchups = [];
 		gameResults = [];
-		localStorage.removeItem('user');
 		window.location.href = '/';
 	}
 </script>
 
-<main class="min-h-screen bg-gray-900 text-gray-100 p-4 sm:p-6">
+<main class="min-h-screen text-ink">
 	{#if isInitialLoading}
 		<div class="flex items-center justify-center min-h-screen" transition:fade>
 			<div class="text-center">
-				<div class="animate-spin rounded-full h-16 w-16 border-b-4 border-purple-500 mx-auto mb-4"></div>
-				<h2 class="text-xl font-semibold text-gray-300">Loading Admin Panel...</h2>
-				<p class="text-gray-400 mt-2">Verifying access permissions</p>
+				<div class="animate-spin rounded-full h-12 w-12 border-2 border-white/20 border-t-white mx-auto mb-5"></div>
+				<h2 class="text-sm font-medium uppercase tracking-[0.3em] text-muted">Verifying Access</h2>
 			</div>
 		</div>
 	{:else if !user}
-		<div class="flex items-center justify-center min-h-screen" transition:fade>
-			<div class="w-full max-w-md bg-gray-800 rounded-lg shadow-xl p-6 sm:p-8 text-center">
-				<h1 class="text-2xl font-bold mb-6">Admin Panel</h1>
-				<div class="mb-6">
-					<svg class="h-16 w-16 text-red-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.98-.833-2.75 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-					</svg>
-					<p class="text-gray-300">Access Restricted</p>
-					<p class="text-sm text-gray-400 mt-2">This admin panel is only available to authorized administrators.</p>
-				</div>
-				<a
-					href="/"
-					class="bg-blue-600 text-white rounded-md px-4 py-2 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors inline-block"
-				>
-					Back to Home
-				</a>
-			</div>
+		<div class="flex items-center justify-center min-h-screen px-4" transition:fade>
+			<Card class="w-full max-w-md text-center">
+				<h1 class="mb-3 text-3xl font-black uppercase tracking-tightest">Restricted</h1>
+				<p class="mb-6 text-sm text-muted">This admin panel is only available to authorized administrators.</p>
+				<Button variant="primary" href="/">Back to Home</Button>
+			</Card>
 		</div>
 	{:else}
-		<div class="max-w-6xl mx-auto">
-			<div class="bg-gray-800 rounded-lg shadow-lg p-4 sm:p-6 mb-6">
-				<div class="flex flex-col sm:flex-row justify-between items-center mb-6">
-					<h1 class="text-2xl font-bold mb-4 sm:mb-0">Admin Panel - Game Results</h1>
-					<div class="flex space-x-2">
-						<a
-							href="/"
-							class="bg-gray-600 text-white rounded-md px-4 py-2 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-50 transition-colors"
-						>
-							Back to Picks
-						</a>
-						<a
-							href="/results"
-							class="bg-green-600 text-white rounded-md px-4 py-2 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 transition-colors"
-						>
-							View Results
-						</a>
-						<button
-							on:click={signOut}
-							class="bg-red-600 text-white rounded-md px-4 py-2 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50 transition-colors"
-						>
-							Sign Out
-						</button>
-					</div>
+		<Nav title="ADMIN" subtitle="Game results">
+			<Button variant="ghost" size="sm" href="/">Picks</Button>
+			<Button variant="ghost" size="sm" href="/results">Results</Button>
+			<Button variant="danger" size="sm" onclick={signOut}>Sign Out</Button>
+		</Nav>
+
+		<div class="mx-auto max-w-6xl px-4 pb-20 pt-6 sm:px-6">
+			{#if isLoading}
+				<div class="py-16 text-center">
+					<div class="animate-spin rounded-full h-10 w-10 border-2 border-white/20 border-t-white mx-auto"></div>
+					<p class="mt-4 text-sm text-muted">Loading...</p>
 				</div>
+			{:else}
+				<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+					<!-- Enter New Result -->
+					<Card animate>
+						<h2 class="mb-1 text-xl font-bold tracking-tight">Enter Game Result</h2>
+						<p class="mb-5 text-sm text-muted">Current week and last week only.</p>
 
-				{#if isLoading}
-					<div class="text-center py-8">
-						<div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-						<p class="mt-4 text-gray-300">Loading...</p>
-					</div>
-				{:else}
-					<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-						<!-- Enter New Result -->
-						<div class="bg-gray-700 rounded-lg p-6">
-							<h2 class="text-xl font-semibold mb-4">Enter Game Result</h2>
-							<p class="text-sm text-gray-400 mb-4">
-								Showing games from current week and last week only
-							</p>
-							
-							<div class="space-y-4">
-								<div>
-									<label class="block text-sm font-medium text-gray-300 mb-2">Select Game</label>
-									<select
-										bind:value={selectedMatchup}
-										class="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-									>
-										<option value={null}>Choose a game...</option>
-										{#each matchups.filter(m => !hasResult(m.id)) as matchup}
-											{@const gameWeek = getNFLWeek(new Date(matchup.commence_time))}
-											<option value={matchup}>
-												Week {gameWeek}: {matchup.away_team} @ {matchup.home_team} - {new Date(matchup.commence_time).toLocaleDateString()}
-											</option>
-										{/each}
-									</select>
-								</div>
-
-								{#if selectedMatchup}
-									<div class="bg-gray-600 rounded-lg p-4">
-										<h3 class="font-medium mb-3">{selectedMatchup.away_team} @ {selectedMatchup.home_team}</h3>
-										<div class="grid grid-cols-2 gap-4">
-											<div>
-												<label class="block text-sm font-medium text-gray-300 mb-2">
-													{selectedMatchup.home_team} Score
-												</label>
-												<input
-													type="number"
-													bind:value={homeScore}
-													min="0"
-													class="w-full px-3 py-2 bg-gray-700 border border-gray-500 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-													placeholder="0"
-												/>
-											</div>
-											<div>
-												<label class="block text-sm font-medium text-gray-300 mb-2">
-													{selectedMatchup.away_team} Score
-												</label>
-												<input
-													type="number"
-													bind:value={awayScore}
-													min="0"
-													class="w-full px-3 py-2 bg-gray-700 border border-gray-500 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-													placeholder="0"
-												/>
-											</div>
-										</div>
-										
-										{#if homeScore !== null && awayScore !== null}
-											<div class="mt-4 p-3 bg-gray-800 rounded-lg">
-												<p class="text-sm text-gray-300">Winner: 
-													<span class="font-bold text-yellow-400">
-														{homeScore > awayScore ? selectedMatchup.home_team : selectedMatchup.away_team}
-													</span>
-												</p>
-											</div>
-										{/if}
-										
-										<button
-											on:click={submitResult}
-											disabled={homeScore === null || awayScore === null || isLoading}
-											class="w-full mt-4 bg-blue-600 text-white rounded-md px-4 py-2 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-										>
-											{isLoading ? 'Saving...' : 'Save Result'}
-										</button>
-									</div>
-								{/if}
-							</div>
-						</div>
-
-						<!-- Existing Results -->
-						<div class="bg-gray-700 rounded-lg p-6">
-							<h2 class="text-xl font-semibold mb-4">Saved Results</h2>
-							<div class="space-y-3 max-h-96 overflow-y-auto">
-								{#if gameResults.length === 0}
-									<p class="text-gray-400 text-center py-4">No results entered yet.</p>
-								{:else}
-									{#each gameResults.sort((a, b) => new Date(b.game_date).getTime() - new Date(a.game_date).getTime()) as result}
-										<div class="bg-gray-600 rounded-lg p-4">
-											<div class="flex justify-between items-center">
-												<div>
-													<div class="font-medium">{result.away_team} @ {result.home_team}</div>
-													<div class="text-sm text-gray-300">
-														Final: {result.away_team} {result.away_score} - {result.home_score} {result.home_team}
-													</div>
-													<div class="text-xs text-gray-400 mt-1">
-														Winner: <span class="text-yellow-400">{result.winner}</span>
-													</div>
-												</div>
-												<div class="text-right">
-													<div class="text-sm text-gray-400">
-														{new Date(result.game_date).toLocaleDateString()}
-													</div>
-												</div>
-											</div>
-										</div>
+						<div class="space-y-4">
+							<div>
+								<label class="mb-2 block text-xs font-medium uppercase tracking-wider text-muted">Select Game</label>
+								<select bind:value={selectedMatchup} class="input-field">
+									<option value={null}>Choose a game...</option>
+									{#each matchups.filter(m => !hasResult(m.id)) as matchup}
+										{@const gameWeek = getNFLWeek(new Date(matchup.commence_time))}
+										<option value={matchup}>
+											Week {gameWeek}: {matchup.away_team} @ {matchup.home_team} - {new Date(matchup.commence_time).toLocaleDateString()}
+										</option>
 									{/each}
-								{/if}
+								</select>
 							</div>
+
+							{#if selectedMatchup}
+								<div class="rounded-xl border border-hairline bg-surface-2/50 p-4">
+									<h3 class="mb-3 font-semibold">{selectedMatchup.away_team} @ {selectedMatchup.home_team}</h3>
+									<div class="grid grid-cols-2 gap-4">
+										<div>
+											<label class="mb-2 block text-xs font-medium uppercase tracking-wider text-muted">{selectedMatchup.home_team}</label>
+											<input type="number" bind:value={homeScore} min="0" class="input-field" placeholder="0" />
+										</div>
+										<div>
+											<label class="mb-2 block text-xs font-medium uppercase tracking-wider text-muted">{selectedMatchup.away_team}</label>
+											<input type="number" bind:value={awayScore} min="0" class="input-field" placeholder="0" />
+										</div>
+									</div>
+
+									{#if homeScore !== null && awayScore !== null}
+										<div class="mt-4 rounded-xl border border-white/15 bg-white/[0.05] p-3">
+											<p class="text-sm text-muted">Winner:
+												<span class="font-bold text-ink">
+													{homeScore > awayScore ? selectedMatchup.home_team : selectedMatchup.away_team}
+												</span>
+											</p>
+										</div>
+									{/if}
+
+									<div class="mt-4">
+										<Button variant="primary" fullWidth loading={isLoading}
+											disabled={homeScore === null || awayScore === null || isLoading}
+											onclick={submitResult}>
+											{isLoading ? 'Saving...' : 'Save Result'}
+										</Button>
+									</div>
+								</div>
+							{/if}
 						</div>
-					</div>
-				{/if}
-			</div>
+					</Card>
+
+					<!-- Existing Results -->
+					<Card animate delay={80}>
+						<h2 class="mb-5 text-xl font-bold tracking-tight">Saved Results</h2>
+						<div class="max-h-96 space-y-2 overflow-y-auto pr-1">
+							{#if gameResults.length === 0}
+								<p class="py-6 text-center text-muted">No results entered yet.</p>
+							{:else}
+								{#each gameResults.sort((a, b) => new Date(b.game_date).getTime() - new Date(a.game_date).getTime()) as result}
+									<div class="flex items-start justify-between gap-4 rounded-xl border border-hairline bg-surface-2/40 p-4">
+										<div class="min-w-0">
+											<div class="truncate font-medium">{result.away_team} @ {result.home_team}</div>
+											<div class="text-sm text-muted">
+												Final: {result.away_team} {result.away_score} - {result.home_score} {result.home_team}
+											</div>
+											<div class="mt-1 text-xs text-muted/80">Winner: <span class="text-ink">{result.winner}</span></div>
+										</div>
+										<div class="flex-shrink-0 text-right text-xs text-muted">
+											{new Date(result.game_date).toLocaleDateString()}
+										</div>
+									</div>
+								{/each}
+							{/if}
+						</div>
+					</Card>
+				</div>
+			{/if}
 		</div>
 	{/if}
 
 	{#if showModal}
-		<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-10 md:px-0">
-			<div class="bg-gray-800 p-6 rounded-lg shadow-xl max-w-md w-full">
-				<h2 class="text-xl font-bold mb-4">Message</h2>
-				<p class="mb-6">{modalMessage}</p>
-				<button
-					on:click={() => (showModal = false)}
-					class="w-full bg-blue-600 text-white rounded-md px-4 py-2 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors"
-				>
-					Close
-				</button>
-			</div>
-		</div>
+		<Modal title="Message" onclose={() => (showModal = false)}>
+			<p class="text-muted">{modalMessage}</p>
+			{#snippet footer()}
+				<Button variant="primary" fullWidth onclick={() => (showModal = false)}>Close</Button>
+			{/snippet}
+		</Modal>
 	{/if}
 </main>
-
-<style>
-	:global(body) {
-		@apply bg-gray-900 text-gray-100;
-	}
-</style>
